@@ -1,0 +1,18 @@
+fn ok_move() -> Int {
+  let x: Int = 1
+  let y := x
+  y
+}
+
+fn main() -> Int {
+  print(ok_move())
+  0
+}
+
+// borrow check failure example:
+// fn bad() -> Int {
+//   let s: String = "x"
+//   let t := s
+//   print(s) // use-after-move
+//   0
+// }

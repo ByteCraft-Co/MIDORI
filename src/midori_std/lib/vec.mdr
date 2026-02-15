@@ -1,0 +1,4 @@
+// Vec and iterator APIs are reserved for future runtime expansion.
+struct Vec {
+  len: Int
+}

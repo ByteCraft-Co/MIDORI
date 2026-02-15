@@ -1,0 +1,10 @@
+fn may_fail(flag: Bool) -> Result[Int, String] {
+  if flag { Ok(42) } else { Err("boom") }
+}
+
+fn main() -> Int {
+  // Result/Option syntax is parsed and type-checked; `?` lowering is pending.
+  let good := Ok(3)
+  print(3)
+  0
+}

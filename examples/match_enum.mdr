@@ -1,0 +1,12 @@
+enum Token {
+  Int(value: Int)
+  Ident(name: String)
+  Plus
+}
+
+fn main() -> Int {
+  // match parses but lowering is not implemented in MVP.
+  let x := 1
+  print(x)
+  0
+}

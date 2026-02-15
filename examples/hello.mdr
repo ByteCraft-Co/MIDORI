@@ -1,0 +1,5 @@
+// hello.mdr
+fn main() -> Int {
+  print("hello from midori")
+  0
+}

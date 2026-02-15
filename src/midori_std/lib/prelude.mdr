@@ -1,0 +1,7 @@
+// Standard prelude declarations (documentation-level stubs for MVP)
+extern "C" fn print_int(x: Int) -> Int
+extern "C" fn print_str(s: String) -> Int
+
+fn read_file(path: String) -> Result[String, String] {
+  Err("read_file not implemented")
+}

@@ -1,0 +1,10 @@
+// Option and Result are compiler-recognized nominal types in MVP.
+enum Option[T] {
+  Some(value: T)
+  None
+}
+
+enum Result[T, E] {
+  Ok(value: T)
+  Err(error: E)
+}
