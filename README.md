@@ -66,3 +66,17 @@ py -m pytest -q
 ```
 
 See `AGENTS.md` for contributor conventions and feature workflow.
+
+## VS Code Extension Scaffold (Not Published)
+
+A local extension scaffold is available in `vscode-extension/` and is intentionally not released yet.
+
+- Extension manifest: `vscode-extension/package.json`
+- Grammar: `vscode-extension/syntaxes/midori.tmLanguage.json`
+- Snippets: `vscode-extension/snippets/midori.json`
+- Placeholder logo: `vscode-extension/assets/logo-placeholder.png`
+
+To test locally:
+1. Open `vscode-extension/` in VS Code.
+2. Press `F5` to run Extension Development Host.
+3. Open a `.mdr` file and verify syntax highlighting/snippets.

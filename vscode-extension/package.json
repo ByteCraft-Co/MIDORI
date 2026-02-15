@@ -1,0 +1,52 @@
+{
+  "name": "midori-language",
+  "displayName": "MIDORI Language Support",
+  "description": "Syntax highlighting and editor support for MIDORI (.mdr)",
+  "version": "0.0.1",
+  "publisher": "midori-placeholder",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "midori",
+    "language",
+    "compiler"
+  ],
+  "icon": "assets/logo-placeholder.png",
+  "contributes": {
+    "languages": [
+      {
+        "id": "midori",
+        "aliases": [
+          "MIDORI",
+          "midori"
+        ],
+        "extensions": [
+          ".mdr"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "midori",
+        "scopeName": "source.midori",
+        "path": "./syntaxes/midori.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "midori",
+        "path": "./snippets/midori.json"
+      }
+    ]
+  },
+  "scripts": {
+    "lint": "echo 'No extension linter configured yet'"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "Main Function": {
+    "prefix": "main",
+    "body": [
+      "fn main() -> Int {",
+      "  ${1:print(\"hello from midori\")}",
+      "  0",
+      "}"
+    ],
+    "description": "Insert MIDORI main entrypoint"
+  },
+  "Function": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:arg}: ${3:Int}) -> ${4:Int} {",
+      "  ${5:0}",
+      "}"
+    ],
+    "description": "Insert function skeleton"
+  },
+  "If Expression": {
+    "prefix": "if",
+    "body": [
+      "if ${1:cond} {",
+      "  ${2:expr}",
+      "} else {",
+      "  ${3:expr}",
+      "}"
+    ],
+    "description": "Insert if expression"
+  }
+}
