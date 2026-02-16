@@ -16,6 +16,7 @@ py -m pip install -e .[dev]
 
 ```bash
 py -m midori_cli.main build examples/hello.mdr -o hello.exe
+py -m midori_cli.main build examples/hello.mdr -o hello.exe --emit-llvm --emit-asm
 py -m midori_cli.main run examples/hello.mdr
 py -m midori_cli.main test
 py -m midori_cli.main fmt examples/hello.mdr
@@ -45,16 +46,21 @@ fn main() -> Int {
 - Parser for functions, structs, enums, traits, extern declarations, if/match expressions, ranges, borrow syntax (`&`, `&mut`), and `?`
 - Name resolution and duplicate checks
 - Type checking and local inference for `:=`
-- Option/Result constructor typing (`Some/None/Ok/Err`) and `?` type-rule
-- MIR lowering with explicit basic blocks for control flow
-- Borrow checker MVP: use-after-move + mutable/immutable alias checks
-- LLVM codegen for Int/Float/Bool/String operations, calls, if-expression lowering, recursion
+- Option/Result constructor typing (`Some/None/Ok/Err`) and `?` early-return lowering
+- Enum lowering with tagged-union representation (`tag + payload slots`)
+- `match` lowering for integer literals, boolean literals, and enum variants
+- MIR lowering with explicit basic blocks, conditional branches, and phi nodes
+- Borrow checker v2 (lexical): nested use-after-move and branch-aware merge checks
+- LLVM codegen for Int/Float/Bool/String operations, calls, if/match lowering, recursion, and enum payload extraction
 - Native executable build via LLVM assembly + `gcc` link
 
 ## Current Limitations
 
-- Generics/traits are parsed but generic function typechecking is intentionally not implemented yet.
-- `match`, `?` lowering, full enum tagged-union codegen, async runtime (`spawn`/`await`), and full Vec runtime are roadmap items.
+- Trait bounds and full trait solving are not implemented.
+- Generics use a minimal call-site substitution model (no stable ABI and no cross-module specialization guarantees).
+- `match` exhaustiveness is warning-only.
+- Async runtime (`spawn`/`await`) and full Vec runtime are still pending.
+- `read_file` currently returns a structured `Err` stub in codegen.
 - FFI syntax parses; safe codegen for extern pointers is pending.
 
 ## Development
@@ -74,7 +80,7 @@ A local extension scaffold is available in `vscode-extension/` and is intentiona
 - Extension manifest: `vscode-extension/package.json`
 - Grammar: `vscode-extension/syntaxes/midori.tmLanguage.json`
 - Snippets: `vscode-extension/snippets/midori.json`
-- Placeholder logo: `vscode-extension/assets/logo-placeholder.png`
+- Placeholder logo: `vscode-extension/assets/midori-logo.png`
 
 To test locally:
 1. Open `vscode-extension/` in VS Code.

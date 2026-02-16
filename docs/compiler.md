@@ -14,7 +14,7 @@ Pipeline stages:
 ## MIR Shape
 
 - `FunctionIR` stores `BasicBlock`s keyed by label
-- instructions include constants, binops, calls, phi nodes
+- instructions include constants, binops, calls, enum construct/tag/field ops, and phi nodes
 - terminators are explicit (`branch`, `condbranch`, `return`)
 
 This keeps control flow explicit and prepares for future optimizations.
@@ -24,6 +24,10 @@ This keeps control flow explicit and prepares for future optimizations.
 - Runtime calls use `printf`/`puts`
 - Int is lowered to `i64` (main return adjusted to `i32` for platform ABI)
 - String literals become private global constants
+- Enums are lowered to named LLVM struct types with:
+  - `i32` discriminant (tag)
+  - fixed `i64` payload slots sized by max variant arity
+- `match` and `?` lower into explicit branch graphs and phi joins.
 
 ## Extending the Compiler
 

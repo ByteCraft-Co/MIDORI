@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from midori_compiler.parser import Parser
-from tests.ast_dump import dump_node
+
+from .ast_dump import dump_node
 
 
 def test_parser_function_and_if_expression_golden() -> None:

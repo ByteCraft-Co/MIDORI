@@ -41,6 +41,31 @@ class CallInstr(Instr):
 
 
 @dataclass
+class EnumConstructInstr(Instr):
+    target: str
+    enum_key: str
+    variant_index: int
+    fields: list[str]
+    field_types: list[Type]
+
+
+@dataclass
+class EnumTagInstr(Instr):
+    target: str
+    source: str
+    enum_key: str
+
+
+@dataclass
+class EnumFieldInstr(Instr):
+    target: str
+    source: str
+    enum_key: str
+    field_index: int
+    field_ty: Type
+
+
+@dataclass
 class PhiInstr(Instr):
     target: str
     incomings: list[tuple[str, str]]
@@ -81,5 +106,20 @@ class FunctionIR:
 
 
 @dataclass
+class EnumVariantLayout:
+    name: str
+    index: int
+    field_types: list[Type]
+
+
+@dataclass
+class EnumLayout:
+    key: str
+    variants: list[EnumVariantLayout]
+    payload_slots: int
+
+
+@dataclass
 class ProgramIR:
     functions: dict[str, FunctionIR]
+    enums: dict[str, EnumLayout]

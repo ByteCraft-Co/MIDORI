@@ -13,7 +13,7 @@ from midori_compiler.errors import MidoriError
 def _cmd_build(args: argparse.Namespace) -> int:
     src = Path(args.source)
     out = Path(args.output) if args.output else src.with_suffix(".exe")
-    compile_file(src, out, emit_ir=True)
+    compile_file(src, out, emit_llvm=args.emit_llvm, emit_asm=args.emit_asm)
     print(f"built {out}")
     return 0
 
@@ -22,7 +22,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     src = Path(args.source)
     with tempfile.TemporaryDirectory(prefix="midori-") as tmp:
         out = Path(tmp) / "program.exe"
-        compile_file(src, out, emit_ir=False)
+        compile_file(src, out)
         proc = subprocess.run([str(out)], check=False)
         return proc.returncode
 
@@ -59,7 +59,7 @@ def _cmd_repl(_args: argparse.Namespace) -> int:
             exe = Path(tmp) / "repl.exe"
             src.write_text(program, encoding="utf-8")
             try:
-                compile_file(src, exe, emit_ir=False)
+                compile_file(src, exe)
             except MidoriError as exc:
                 print(exc)
                 continue
@@ -73,6 +73,8 @@ def main() -> None:
     p_build = sub.add_parser("build", help="compile a .mdr file into an executable")
     p_build.add_argument("source")
     p_build.add_argument("-o", "--output", default=None)
+    p_build.add_argument("--emit-llvm", action="store_true", help="write LLVM IR beside output")
+    p_build.add_argument("--emit-asm", action="store_true", help="write assembly beside output")
     p_build.set_defaults(fn=_cmd_build)
 
     p_run = sub.add_parser("run", help="build and run a .mdr file")

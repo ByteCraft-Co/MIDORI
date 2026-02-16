@@ -9,10 +9,22 @@ fn main() -> Int {
   0
 }
 
-// borrow check failure example:
-// fn bad() -> Int {
+// borrow check failure examples:
+// fn bad_use_after_move() -> Int {
 //   let s: String = "x"
 //   let t := s
 //   print(s) // use-after-move
+//   0
+// }
+//
+// fn bad_branch_move() -> Int {
+//   let s: String = "x"
+//   if true {
+//     let t := s
+//     0
+//   } else {
+//     0
+//   }
+//   let r := &mut s // cannot borrow moved value
 //   0
 // }

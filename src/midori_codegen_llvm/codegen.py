@@ -14,6 +14,10 @@ from midori_ir.mir import (
     CallInstr,
     CondBranchInstr,
     ConstInstr,
+    EnumConstructInstr,
+    EnumFieldInstr,
+    EnumLayout,
+    EnumTagInstr,
     FunctionIR,
     PhiInstr,
     ProgramIR,
@@ -35,8 +39,12 @@ class LLVMCodegen:
         self._string_counter = 0
         self._declare_runtime()
         self.fn_map: dict[str, ir.Function] = {}
+        self.enum_layouts: dict[str, EnumLayout] = {}
+        self.enum_types: dict[str, ir.Type] = {}
 
     def emit_module(self, program: ProgramIR) -> str:
+        self.enum_layouts = program.enums
+        self._declare_enum_types(program.enums)
         self._declare_functions(program)
         for fn in program.functions.values():
             self._emit_function(fn)
@@ -62,6 +70,18 @@ class LLVMCodegen:
             ir_fn = ir.Function(self.module, ir.FunctionType(ret_type, arg_types), name=fn.name)
             self.fn_map[fn.name] = ir_fn
 
+    def _declare_enum_types(self, enums: dict[str, EnumLayout]) -> None:
+        i32 = ir.IntType(32)
+        i64 = ir.IntType(64)
+        for key, layout in enums.items():
+            type_name = self._sanitize_enum_name(key)
+            enum_ty = self.module.context.get_identified_type(type_name)
+            if enum_ty.is_opaque:
+                body = [i32]
+                body.extend(i64 for _ in range(layout.payload_slots))
+                enum_ty.set_body(*body)
+            self.enum_types[key] = enum_ty
+
     def _emit_function(self, fn: FunctionIR) -> None:
         ir_fn = self.fn_map[fn.name]
         ll_blocks = {name: ir_fn.append_basic_block(name=name) for name in fn.blocks}
@@ -69,6 +89,7 @@ class LLVMCodegen:
             ir_fn.args[i].name = name
 
         values: dict[str, ir.Value] = {}
+        pending_phi_incomings: list[tuple[ir.instructions.PhiInstr, list[tuple[str, str]]]] = []
         for i, (_name, _ty) in enumerate(fn.params):
             values[f"%arg{i}"] = ir_fn.args[i]
 
@@ -91,23 +112,48 @@ class LLVMCodegen:
                         self._emit_print(builder, args[0], self._infer_value_type(args[0]))
                         if instr.target:
                             values[instr.target] = ir.Constant(self._ll_type(instr.ret_ty), None)
+                    elif instr.name == "read_file":
+                        # Runtime fallback for v0.2.0: return Err("read_file not implemented")
+                        result_ty = self._ll_type(instr.ret_ty)
+                        err_msg = self._global_cstr(
+                            "read_file not implemented", f"rf_err_{self._next_string_id()}"
+                        )
+                        agg = ir.Constant(result_ty, None)
+                        agg = builder.insert_value(
+                            agg, ir.Constant(ir.IntType(32), 1), 0
+                        )  # Err tag
+                        payload = builder.ptrtoint(err_msg, ir.IntType(64))
+                        agg = builder.insert_value(agg, payload, 1)
+                        if instr.target:
+                            values[instr.target] = agg
                     else:
                         call = builder.call(self.fn_map[instr.name], args)
                         if instr.target:
                             values[instr.target] = call
+                elif isinstance(instr, EnumConstructInstr):
+                    enum_ty = self.enum_types[instr.enum_key]
+                    agg = ir.Constant(enum_ty, None)
+                    agg = builder.insert_value(
+                        agg, ir.Constant(ir.IntType(32), instr.variant_index), 0
+                    )
+                    for i, field_name in enumerate(instr.fields):
+                        encoded = self._encode_payload(
+                            builder, values[field_name], instr.field_types[i]
+                        )
+                        agg = builder.insert_value(agg, encoded, i + 1)
+                    values[instr.target] = agg
+                elif isinstance(instr, EnumTagInstr):
+                    tag_i32 = builder.extract_value(values[instr.source], 0)
+                    values[instr.target] = builder.zext(tag_i32, ir.IntType(64))
+                elif isinstance(instr, EnumFieldInstr):
+                    raw = builder.extract_value(values[instr.source], instr.field_index + 1)
+                    values[instr.target] = self._decode_payload(builder, raw, instr.field_ty)
                 elif isinstance(instr, PhiInstr):
                     phi = builder.phi(self._ll_type(instr.ty), name=instr.target[1:])
                     values[instr.target] = phi
+                    pending_phi_incomings.append((phi, instr.incomings))
                 else:
                     raise RuntimeError(f"unsupported instruction {type(instr).__name__}")
-
-            # Resolve phi incomings in a second pass per block.
-            for instr in bb.instructions:
-                if isinstance(instr, PhiInstr):
-                    phi = values[instr.target]
-                    for pred_name, value_name in instr.incomings:
-                        if value_name:
-                            phi.add_incoming(values[value_name], ll_blocks[pred_name])
 
             term = bb.terminator
             if isinstance(term, BranchInstr):
@@ -128,12 +174,21 @@ class LLVMCodegen:
             else:
                 builder.unreachable()
 
+        # Resolve phi incomings after all blocks/instructions are materialized.
+        for phi, incomings in pending_phi_incomings:
+            for pred_name, value_name in incomings:
+                if value_name:
+                    phi.add_incoming(values[value_name], ll_blocks[pred_name])
+
     def _ll_ret_type(self, fn: FunctionIR):
         if fn.name == "main":
             return ir.IntType(32)
         return self._ll_type(fn.return_type)
 
     def _ll_type(self, ty: Type):
+        enum_key = _enum_key_for_type(ty)
+        if enum_key and enum_key in self.enum_types:
+            return self.enum_types[enum_key]
         if ty.name == "Int":
             return ir.IntType(64)
         if ty.name == "Bool":
@@ -147,6 +202,46 @@ class LLVMCodegen:
         if ty.name == "Void":
             return ir.VoidType()
         return ir.IntType(64)
+
+    def _encode_payload(self, builder: ir.IRBuilder, value: ir.Value, ty: Type):
+        i64 = ir.IntType(64)
+        if ty.name == "Int":
+            if isinstance(value.type, ir.IntType) and value.type.width == 64:
+                return value
+            if isinstance(value.type, ir.IntType):
+                return builder.sext(value, i64)
+        if ty.name == "Bool":
+            return builder.zext(value, i64)
+        if ty.name == "Char":
+            return builder.zext(value, i64)
+        if ty.name == "Float":
+            return builder.bitcast(value, i64)
+        if ty.name == "String":
+            return builder.ptrtoint(value, i64)
+        if isinstance(value.type, ir.IntType):
+            if value.type.width == 64:
+                return value
+            return builder.sext(value, i64)
+        raise RuntimeError(f"unsupported enum payload encode for {ty}")
+
+    def _decode_payload(self, builder: ir.IRBuilder, raw: ir.Value, ty: Type):
+        i8 = ir.IntType(8)
+        i64 = ir.IntType(64)
+        if ty.name == "Int":
+            return raw if isinstance(raw.type, ir.IntType) and raw.type.width == 64 else raw
+        if ty.name == "Bool":
+            return builder.trunc(raw, ir.IntType(1))
+        if ty.name == "Char":
+            return builder.trunc(raw, i8)
+        if ty.name == "Float":
+            return builder.bitcast(raw, ir.DoubleType())
+        if ty.name == "String":
+            return builder.inttoptr(raw, i8.as_pointer())
+        enum_key = _enum_key_for_type(ty)
+        if enum_key and enum_key in self.enum_types:
+            # Nested enum payload support is deferred; return zero-like enum for now.
+            return ir.Constant(self.enum_types[enum_key], None)
+        return builder.trunc(raw, i64)
 
     def _const_from_literal(self, value: str, ty: Type):
         if ty == INT:
@@ -246,6 +341,15 @@ class LLVMCodegen:
         zero = ir.Constant(ir.IntType(32), 0)
         return global_var.gep((zero, zero))
 
+    def _sanitize_enum_name(self, key: str) -> str:
+        out = []
+        for ch in key:
+            if ch.isalnum() or ch == "_":
+                out.append(ch)
+            else:
+                out.append("_")
+        return "enum_" + "".join(out)
+
     def _next_string_id(self) -> int:
         out = self._string_counter
         self._string_counter += 1
@@ -301,3 +405,22 @@ def _llvm_link_triple() -> str:
     if "mingw" in machine or "w64" in machine:
         return "x86_64-w64-windows-gnu"
     return llvm.get_default_triple()
+
+
+def _enum_key_for_type(ty: Type) -> str | None:
+    if ty.name in {"Option", "Result"} and ty.args:
+        return str(ty)
+    if ty.name in {
+        "Int",
+        "Float",
+        "Bool",
+        "Char",
+        "String",
+        "Void",
+        "Range",
+        "Ref",
+        "Ptr",
+        "Unknown",
+    }:
+        return None
+    return ty.name
