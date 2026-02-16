@@ -98,11 +98,11 @@ def test_cli_check_uses_project_manifest_when_source_omitted(
     src_dir.mkdir()
     entry = src_dir / "main.mdr"
     entry.write_text(
-        "fn main() -> Int {\n  print(\"ok\")\n  0\n}\n",
+        'fn main() -> Int {\n  print("ok")\n  0\n}\n',
         encoding="utf-8",
     )
     (tmp_path / "midori.toml").write_text(
-        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[build]\nentry = \"src/main.mdr\"\n",
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n[build]\nentry = "src/main.mdr"\n',
         encoding="utf-8",
     )
 
@@ -120,7 +120,7 @@ def test_cli_lock_generates_lockfile(
     entry = tmp_path / "main.mdr"
     entry.write_text("fn main() -> Int { 0 }\n", encoding="utf-8")
     (tmp_path / "midori.toml").write_text(
-        "[package]\nname = \"demo\"\nversion = \"0.2.0\"\n",
+        '[package]\nname = "demo"\nversion = "0.2.0"\n',
         encoding="utf-8",
     )
 

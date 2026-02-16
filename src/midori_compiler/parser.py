@@ -48,7 +48,7 @@ class Parser:
         )
 
     def _parse_import_decl(self) -> ast.ImportDecl:
-        path = self._expect(TokenKind.STRING, "expected import path string, e.g. \"./util.mdr\"")
+        path = self._expect(TokenKind.STRING, 'expected import path string, e.g. "./util.mdr"')
         return ast.ImportDecl(span=path.span, path=path.lexeme.strip('"'))
 
     def _parse_fn(self, *, is_pub: bool, is_task: bool) -> ast.FunctionDecl:

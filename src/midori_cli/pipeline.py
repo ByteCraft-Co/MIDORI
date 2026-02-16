@@ -280,9 +280,7 @@ def write_lockfile(path: Path | None = None, *, output: Path | None = None) -> P
     loaded = load_program(path)
     root = loaded.project.root if loaded.project is not None else loaded.entry.parent
     package_name = loaded.project.package_name if loaded.project is not None else loaded.entry.stem
-    package_version = (
-        loaded.project.package_version if loaded.project is not None else "0.1.0"
-    )
+    package_version = loaded.project.package_version if loaded.project is not None else "0.1.0"
 
     sources: list[tuple[str, str]] = []
     for src in loaded.sources:

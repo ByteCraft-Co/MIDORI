@@ -361,7 +361,9 @@ class MidoriTerminal:
         self._session_declarations = candidate
         if _contains_main_fn(declaration):
             print("running fn main() from session...")
-            run_source = self._build_program_source(self._session_declarations, with_stub_main=False)
+            run_source = self._build_program_source(
+                self._session_declarations, with_stub_main=False
+            )
             return self._run_source(run_source, prefix="midori-term-session-main-")
 
         head = declaration.splitlines()[0].strip()

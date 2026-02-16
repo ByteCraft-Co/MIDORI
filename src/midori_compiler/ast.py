@@ -99,13 +99,7 @@ class ImportDecl(Node):
 
 
 Item = (
-    FunctionDecl
-    | ExternFunctionDecl
-    | StructDecl
-    | EnumDecl
-    | TraitDecl
-    | ErrorDecl
-    | ImportDecl
+    FunctionDecl | ExternFunctionDecl | StructDecl | EnumDecl | TraitDecl | ErrorDecl | ImportDecl
 )
 
 
