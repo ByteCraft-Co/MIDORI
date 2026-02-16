@@ -147,6 +147,14 @@ midori test
 
 See `AGENTS.md` for contributor conventions and feature workflow.
 
+## Legal
+
+- License: `LICENSE`
+- Legal overview: `LEGAL.md`
+- Terms of use: `TERMS-OF-USE.md`
+- Privacy: `PRIVACY.md`
+- Trademark policy: `TRADEMARKS.md`
+
 ## VS Code
 
 The experimental extension lives in `vscode-extension/`.

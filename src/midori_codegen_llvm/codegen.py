@@ -394,7 +394,9 @@ class LLVMCodegen:
             raise RuntimeError("read_file return type must lower to enum Result[String, String]")
 
         result_ptr = builder.alloca(result_ty)
-        builder.store(self._build_string_result(builder, result_ty, 1, self.read_err_open), result_ptr)
+        builder.store(
+            self._build_string_result(builder, result_ty, 1, self.read_err_open), result_ptr
+        )
 
         file_handle = builder.call(self.fopen, [path_value, self.read_mode], name="rf_file")
         file_ok = builder.icmp_unsigned("!=", file_handle, ir.Constant(i8ptr, None))

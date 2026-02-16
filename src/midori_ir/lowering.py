@@ -645,7 +645,9 @@ def lower_typed_program(typed: TypedProgram) -> ProgramIR:
         for i, param in enumerate(typed_fn.decl.params):
             builder.env[param.name] = f"%arg{i}"
         tail = builder.lower_block(typed_fn.decl.body)
-        if builder.current.terminator is None and not builder._is_unreachable_block(builder.current):
+        if builder.current.terminator is None and not builder._is_unreachable_block(
+            builder.current
+        ):
             if typed_fn.fn_type.ret == VOID:
                 builder.terminate(ReturnInstr(value=None))
             else:
