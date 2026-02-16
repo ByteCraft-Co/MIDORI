@@ -192,6 +192,8 @@ def _children(expr: ast.Expr) -> list[ast.Expr]:
         return [expr.start, expr.end]
     if isinstance(expr, ast.PostfixTryExpr):
         return [expr.expr]
+    if isinstance(expr, ast.RaiseExpr):
+        return [expr.message]
     if isinstance(expr, ast.UnsafeExpr):
         return [expr.block]
     if isinstance(expr, (ast.SpawnExpr, ast.AwaitExpr)):

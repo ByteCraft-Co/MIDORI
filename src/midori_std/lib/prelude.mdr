@@ -2,6 +2,5 @@
 extern "C" fn print_int(x: Int) -> Int
 extern "C" fn print_str(s: String) -> Int
 
-fn read_file(path: String) -> Result[String, String] {
-  Err("read_file not implemented")
-}
+// Runtime intrinsic implemented by the compiler backend.
+extern "C" fn read_file(path: String) -> Result[String, String]

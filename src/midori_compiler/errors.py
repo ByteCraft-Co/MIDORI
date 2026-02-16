@@ -66,6 +66,8 @@ def _infer_error_code(module: str, message: str) -> str:
             return "MD3003"
         if "missing entry point function" in lower:
             return "MD3004"
+        if "duplicate custom error" in lower:
+            return "MD3005"
         return "MD3000"
 
     if module.startswith("midori_typecheck.checker"):
@@ -89,6 +91,10 @@ def _infer_error_code(module: str, message: str) -> str:
             return "MD3109"
         if "unsupported" in lower:
             return "MD3110"
+        if "unknown custom error kind" in lower:
+            return "MD3111"
+        if "`raise`" in lower:
+            return "MD3112"
         return "MD3100"
 
     if module.startswith("midori_ir.borrow"):

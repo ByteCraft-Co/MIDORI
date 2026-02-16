@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MIDORI: Check Current File",
+      "type": "shell",
+      "command": "midori",
+      "args": ["check", "${file}"],
+      "problemMatcher": ["$midori"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      }
+    },
+    {
+      "label": "MIDORI: Build Current File",
+      "type": "shell",
+      "command": "midori",
+      "args": [
+        "build",
+        "${file}",
+        "-o",
+        "${fileDirname}${/}${fileBasenameNoExtension}.exe"
+      ],
+      "problemMatcher": ["$midori"],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      }
+    }
+  ]
+}

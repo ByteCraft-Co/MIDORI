@@ -88,7 +88,12 @@ class TraitDecl(Node):
     methods: list[FunctionSig]
 
 
-Item = FunctionDecl | ExternFunctionDecl | StructDecl | EnumDecl | TraitDecl
+@dataclass
+class ErrorDecl(Node):
+    name: str
+
+
+Item = FunctionDecl | ExternFunctionDecl | StructDecl | EnumDecl | TraitDecl | ErrorDecl
 
 
 @dataclass
@@ -229,6 +234,12 @@ class SpawnExpr(Expr):
 @dataclass
 class AwaitExpr(Expr):
     expr: Expr
+
+
+@dataclass
+class RaiseExpr(Expr):
+    kind: str
+    message: Expr
 
 
 @dataclass

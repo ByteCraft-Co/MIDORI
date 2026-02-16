@@ -41,6 +41,8 @@ class TokenKind(Enum):
     AWAIT = auto()
     UNSAFE = auto()
     EXTERN = auto()
+    ERROR = auto()
+    RAISE = auto()
     TRUE = auto()
     FALSE = auto()
 
@@ -113,6 +115,8 @@ KEYWORDS: dict[str, TokenKind] = {
     "await": TokenKind.AWAIT,
     "unsafe": TokenKind.UNSAFE,
     "extern": TokenKind.EXTERN,
+    "error": TokenKind.ERROR,
+    "raise": TokenKind.RAISE,
     "true": TokenKind.TRUE,
     "false": TokenKind.FALSE,
 }

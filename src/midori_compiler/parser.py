@@ -37,7 +37,9 @@ class Parser:
             return self._parse_enum()
         if self._match(TokenKind.TRAIT):
             return self._parse_trait()
-        raise self._error_here("expected item", "start with fn/struct/enum/trait/extern")
+        if self._match(TokenKind.ERROR):
+            return self._parse_error_decl()
+        raise self._error_here("expected item", "start with fn/struct/enum/trait/extern/error")
 
     def _parse_fn(self, *, is_pub: bool, is_task: bool) -> ast.FunctionDecl:
         name = self._expect(TokenKind.IDENT, "expected function name")
@@ -163,6 +165,10 @@ class Parser:
         return ast.TraitDecl(
             span=self._span(name.span, end.span), name=name.lexeme, methods=methods
         )
+
+    def _parse_error_decl(self) -> ast.ErrorDecl:
+        name = self._expect(TokenKind.IDENT, "expected custom error name")
+        return ast.ErrorDecl(span=name.span, name=name.lexeme)
 
     def _parse_params(self) -> list[ast.Param]:
         params: list[ast.Param] = []
@@ -448,6 +454,15 @@ class Parser:
             marker = self._prev()
             block = self._parse_block()
             return ast.UnsafeExpr(span=self._span(marker.span, block.span), block=block)
+        if self._match(TokenKind.RAISE):
+            marker = self._prev()
+            kind = self._expect(TokenKind.IDENT, "expected custom error name after raise")
+            self._expect(TokenKind.LPAREN, "expected '(' after custom error name")
+            message = self._parse_expr()
+            end = self._expect(TokenKind.RPAREN, "expected ')'")
+            return ast.RaiseExpr(
+                span=self._span(marker.span, end.span), kind=kind.lexeme, message=message
+            )
         raise self._error_here("expected expression")
 
     def _parse_if_expr(self) -> ast.IfExpr:

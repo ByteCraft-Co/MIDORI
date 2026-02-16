@@ -4,6 +4,7 @@ import argparse
 import importlib.metadata
 import subprocess
 import tempfile
+import textwrap
 import tomllib
 from pathlib import Path
 
@@ -62,6 +63,49 @@ def _cmd_fmt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_new(args: argparse.Namespace) -> int:
+    target = Path(args.name)
+    if target.exists():
+        if not target.is_dir():
+            print(f"target path exists and is not a directory: {target}")
+            return 1
+        if any(target.iterdir()):
+            print(f"project directory is not empty: {target}")
+            return 1
+
+    tests_dir = target / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+
+    main_src = textwrap.dedent(
+        f"""\
+        fn main() -> Int {{
+          print("hello from {target.name}")
+          0
+        }}
+        """
+    )
+    smoke_test = textwrap.dedent(
+        """\
+        fn main() -> Int {
+          let value := 21 + 21
+          if value == 42 {
+            print("ok")
+          } else {
+            print("fail")
+          }
+          0
+        }
+        """
+    )
+
+    (target / "main.mdr").write_text(main_src, encoding="utf-8")
+    (tests_dir / "smoke_test.mdr").write_text(smoke_test, encoding="utf-8")
+    print(f"created project {target}")
+    print(f"  - {target / 'main.mdr'}")
+    print(f"  - {tests_dir / 'smoke_test.mdr'}")
+    return 0
+
+
 def _cmd_repl(_args: argparse.Namespace) -> int:
     print("midori repl (type `:quit` to exit)")
     while True:
@@ -83,6 +127,9 @@ def _cmd_repl(_args: argparse.Namespace) -> int:
                 compile_file(src, exe)
             except MidoriError as exc:
                 print(exc)
+                continue
+            except Exception as exc:  # noqa: BLE001
+                print(f"internal compiler error: {exc}")
                 continue
             subprocess.run([str(exe)], check=False)
 
@@ -114,6 +161,10 @@ def main() -> None:
     p_fmt.add_argument("path")
     p_fmt.set_defaults(fn=_cmd_fmt)
 
+    p_new = sub.add_parser("new", help="create a new MIDORI starter project")
+    p_new.add_argument("name")
+    p_new.set_defaults(fn=_cmd_new)
+
     p_repl = sub.add_parser("repl", help="run a minimal expression REPL")
     p_repl.set_defaults(fn=_cmd_repl)
 
@@ -122,6 +173,9 @@ def main() -> None:
         code = args.fn(args)
     except MidoriError as exc:
         print(exc)
+        raise SystemExit(1) from exc
+    except Exception as exc:  # noqa: BLE001
+        print(f"internal compiler error: {exc}")
         raise SystemExit(1) from exc
     raise SystemExit(code)
 

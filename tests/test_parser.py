@@ -34,6 +34,17 @@ fn main() -> Int {
     assert len(program.items) == 2
 
 
+def test_parser_custom_error_and_raise() -> None:
+    src = """
+error ValidationError
+fn main() -> Result[Int, String] {
+  raise ValidationError("invalid input")
+}
+"""
+    program = Parser.from_source(src, "raise.mdr").parse()
+    assert len(program.items) == 2
+
+
 def test_parser_reports_error_with_span() -> None:
     src = "fn main( { 0 }"
     try:

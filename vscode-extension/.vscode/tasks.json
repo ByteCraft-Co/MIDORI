@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "midori-extension:validate",
+      "label": "midori-extension:lint",
       "type": "shell",
-      "command": "npm run validate:json",
+      "command": "npm run lint",
       "options": {
         "cwd": "${workspaceFolder}",
         "shell": {

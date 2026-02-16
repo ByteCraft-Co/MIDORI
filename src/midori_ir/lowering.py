@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from midori_compiler import ast
 from midori_compiler.errors import MidoriError
+from midori_compiler.span import Span
 from midori_ir.mir import (
     BasicBlock,
     BinOpInstr,
@@ -23,6 +25,8 @@ from midori_ir.mir import (
 )
 from midori_typecheck.checker import TypedProgram
 from midori_typecheck.types import BOOL, FLOAT, INT, STRING, VOID, Type
+
+_SOURCE_LINES_CACHE: dict[str, list[str]] = {}
 
 
 @dataclass
@@ -58,6 +62,9 @@ class _Builder:
         name = f"%t{self.temp_index}"
         self.temp_index += 1
         return name
+
+    def _is_unreachable_block(self, block: BasicBlock) -> bool:
+        return block.name.startswith("dead_")
 
     def lower_expr(self, expr: ast.Expr) -> str:
         if isinstance(expr, ast.LiteralExpr):
@@ -158,8 +165,10 @@ class _Builder:
             self.env = old_env.copy()
             then_val = self.lower_block(expr.then_block)
             then_end = self.current.name
-            if self.current.terminator is None:
+            then_reaches_join = False
+            if self.current.terminator is None and not self._is_unreachable_block(self.current):
                 self.terminate(BranchInstr(target=join_bb.name))
+                then_reaches_join = True
 
             self.current = else_bb
             self.env = old_env.copy()
@@ -167,21 +176,33 @@ class _Builder:
             if expr.else_branch:
                 else_val = self.lower_expr(expr.else_branch)
             else_end = self.current.name
-            if self.current.terminator is None:
+            else_reaches_join = False
+            if self.current.terminator is None and not self._is_unreachable_block(self.current):
                 self.terminate(BranchInstr(target=join_bb.name))
+                else_reaches_join = True
 
             self.current = join_bb
             self.env = old_env
             ty = self.expr_types[id(expr)]
             if ty == VOID:
                 return ""
+            incomings: list[tuple[str, str]] = []
+            if then_reaches_join:
+                incomings.append((then_end, then_val))
+            if else_reaches_join:
+                incomings.append((else_end, else_val))
+            if not incomings:
+                raise MidoriError(
+                    span=expr.span,
+                    message="if expression does not produce a value because all branches terminate",
+                )
             out = self.tmp()
-            self.emit(
-                PhiInstr(target=out, incomings=[(then_end, then_val), (else_end, else_val)], ty=ty)
-            )
+            self.emit(PhiInstr(target=out, incomings=incomings, ty=ty))
             return out
         if isinstance(expr, ast.PostfixTryExpr):
             return self._lower_try_expr(expr)
+        if isinstance(expr, ast.RaiseExpr):
+            return self._lower_raise_expr(expr)
         if isinstance(expr, ast.MatchExpr):
             return self._lower_match_expr(expr)
         if isinstance(expr, ast.UnsafeExpr):
@@ -284,6 +305,42 @@ class _Builder:
         )
         return out
 
+    def _lower_raise_expr(self, expr: ast.RaiseExpr) -> str:
+        if self.fn_return_type.name != "Result" or len(self.fn_return_type.args) != 2:
+            raise MidoriError(
+                span=expr.span,
+                message="`raise` lowering expects enclosing function to return Result[T, String]",
+            )
+        enum_key = _enum_key_for_type(self.fn_return_type)
+        if enum_key is None:
+            raise MidoriError(
+                span=expr.span,
+                message=f"internal error: missing enum key for function return {self.fn_return_type}",
+            )
+        if not isinstance(expr.message, ast.LiteralExpr) or expr.message.kind != "string":
+            raise MidoriError(
+                span=expr.span,
+                message="`raise` lowering expects a string literal message",
+            )
+
+        message = _format_raise_message(self.fn_name, expr.kind, expr.message.value, expr.span)
+        msg_temp = self.tmp()
+        self.emit(ConstInstr(target=msg_temp, value=message, ty=STRING))
+
+        err_value = self.tmp()
+        self.emit(
+            EnumConstructInstr(
+                target=err_value,
+                enum_key=enum_key,
+                variant_index=1,
+                fields=[msg_temp],
+                field_types=[self.fn_return_type.args[1]],
+            )
+        )
+        self.terminate(ReturnInstr(value=err_value))
+        self.current = self.new_block("dead")
+        return ""
+
     def _lower_match_expr(self, expr: ast.MatchExpr) -> str:
         target_val = self.lower_expr(expr.expr)
         target_ty = self.expr_types[id(expr.expr)]
@@ -316,20 +373,14 @@ class _Builder:
             self._bind_pattern(arm.pattern, target_val, target_ty)
             arm_val = self.lower_expr(arm.expr)
             arm_end = self.current.name
-            if self.current.terminator is None:
+            if self.current.terminator is None and not self._is_unreachable_block(self.current):
                 self.terminate(BranchInstr(target=end_bb.name))
                 if out_ty != VOID:
                     incoming.append((arm_end, arm_val))
 
         self.current = test_bb
-        if self.current.terminator is None:
-            # Non-exhaustive runtime fallback for v0.2.0: synthesize default value.
-            default_val = ""
-            if out_ty != VOID:
-                default_val = self._emit_default_value(out_ty)
-            self.terminate(BranchInstr(target=end_bb.name))
-            if out_ty != VOID:
-                incoming.append((self.current.name, default_val))
+        # Remaining fallthrough path is treated as unreachable. Exhaustiveness is
+        # enforced in typecheck; if it regresses, codegen will emit `unreachable`.
 
         self.current = end_bb
         self.env = base_env
@@ -514,16 +565,16 @@ def _enum_key_for_type(ty: Type) -> str | None:
     return ty.name
 
 
-def _collect_type_enums(ty: Type, typed: TypedProgram, out: set[str]) -> None:
+def _collect_type_enums(ty: Type, typed: TypedProgram, out: dict[str, Type]) -> None:
     key = _enum_key_for_type(ty)
     if key is not None:
         if ty.name in typed.enums or ty.name in {"Option", "Result"}:
-            out.add(key)
+            out.setdefault(key, ty)
     for arg in ty.args:
         _collect_type_enums(arg, typed, out)
 
 
-def _layout_for_enum_key(enum_key: str, typed: TypedProgram) -> EnumLayout:
+def _layout_for_enum_key(enum_key: str, enum_ty: Type, typed: TypedProgram) -> EnumLayout:
     if enum_key in typed.enums:
         enum_info = typed.enums[enum_key]
         variants = [
@@ -533,24 +584,19 @@ def _layout_for_enum_key(enum_key: str, typed: TypedProgram) -> EnumLayout:
         payload_slots = max((len(v.field_types) for v in variants), default=0)
         return EnumLayout(key=enum_key, variants=variants, payload_slots=payload_slots)
 
-    if enum_key.startswith("Option["):
+    if enum_ty.name == "Option" and len(enum_ty.args) == 1:
         # Option[T] -> tag 0 = Some(T), tag 1 = None
-        # Parse T from the encoded type string by round-tripping through known type map is unnecessary;
-        # we derive the field type from runtime use-site when constructing/enforcing through expr types.
-        inner = enum_key[len("Option[") : -1]
-        ty = Type(inner) if "," not in inner and "[" not in inner else Type("Unknown")
+        inner = enum_ty.args[0]
         variants = [
-            EnumVariantLayout(name="Some", index=0, field_types=[ty]),
+            EnumVariantLayout(name="Some", index=0, field_types=[inner]),
             EnumVariantLayout(name="None", index=1, field_types=[]),
         ]
         return EnumLayout(key=enum_key, variants=variants, payload_slots=1)
 
-    if enum_key.startswith("Result["):
-        # Result[T, E] parsing (best-effort for current v0.2.0 type rendering).
-        inside = enum_key[len("Result[") : -1]
-        split = inside.split(",")
-        ok_ty = Type(split[0].strip()) if split else Type("Unknown")
-        err_ty = Type(split[1].strip()) if len(split) > 1 else Type("Unknown")
+    if enum_ty.name == "Result" and len(enum_ty.args) == 2:
+        # Result[T, E] -> tag 0 = Ok(T), tag 1 = Err(E)
+        ok_ty = enum_ty.args[0]
+        err_ty = enum_ty.args[1]
         variants = [
             EnumVariantLayout(name="Ok", index=0, field_types=[ok_ty]),
             EnumVariantLayout(name="Err", index=1, field_types=[err_ty]),
@@ -561,15 +607,18 @@ def _layout_for_enum_key(enum_key: str, typed: TypedProgram) -> EnumLayout:
 
 
 def lower_typed_program(typed: TypedProgram) -> ProgramIR:
-    enum_keys: set[str] = set()
+    enum_types: dict[str, Type] = {}
     for fn in typed.functions.values():
-        _collect_type_enums(fn.fn_type.ret, typed, enum_keys)
+        _collect_type_enums(fn.fn_type.ret, typed, enum_types)
         for p_ty in fn.fn_type.params:
-            _collect_type_enums(p_ty, typed, enum_keys)
+            _collect_type_enums(p_ty, typed, enum_types)
         for expr_ty in fn.expr_types.values():
-            _collect_type_enums(expr_ty, typed, enum_keys)
+            _collect_type_enums(expr_ty, typed, enum_types)
 
-    enum_layouts = {key: _layout_for_enum_key(key, typed) for key in enum_keys}
+    enum_layouts = {
+        key: _layout_for_enum_key(key, enum_types[key], typed) for key in sorted(enum_types)
+    }
+    _ensure_supported_enum_payloads(enum_layouts, typed.program.span)
 
     user_variant_constructors: dict[str, tuple[str, EnumVariantLayout]] = {}
     ambiguous: set[str] = set()
@@ -596,7 +645,7 @@ def lower_typed_program(typed: TypedProgram) -> ProgramIR:
         for i, param in enumerate(typed_fn.decl.params):
             builder.env[param.name] = f"%arg{i}"
         tail = builder.lower_block(typed_fn.decl.body)
-        if builder.current.terminator is None:
+        if builder.current.terminator is None and not builder._is_unreachable_block(builder.current):
             if typed_fn.fn_type.ret == VOID:
                 builder.terminate(ReturnInstr(value=None))
             else:
@@ -615,3 +664,87 @@ def lower_typed_program(typed: TypedProgram) -> ProgramIR:
 
 def is_codegen_supported_type(ty: Type) -> bool:
     return ty in {INT, BOOL, STRING, VOID, FLOAT} or _enum_key_for_type(ty) is not None
+
+
+def _ensure_supported_enum_payloads(enum_layouts: dict[str, EnumLayout], span) -> None:
+    for layout in enum_layouts.values():
+        for variant in layout.variants:
+            for field_ty in variant.field_types:
+                if not _is_codegen_supported_payload_type(field_ty):
+                    raise MidoriError(
+                        span=span,
+                        message=(
+                            f"unsupported enum payload type {field_ty} in "
+                            f"{layout.key}.{variant.name}"
+                        ),
+                        hint=(
+                            "enum payload fields currently support Int, Float, Bool, Char, "
+                            "and String"
+                        ),
+                    )
+
+
+def _is_codegen_supported_payload_type(ty: Type) -> bool:
+    if ty.name in {"Int", "Float", "Bool", "Char", "String"}:
+        return True
+    return False
+
+
+def _format_raise_message(fn_name: str, kind: str, raw_lexeme: str, span: Span) -> str:
+    detail = _decode_string_lexeme(raw_lexeme)
+    location = f"{span.file}:{span.line}:{span.col}"
+    lines = [
+        "[MIDORI RAISE]",
+        f"  kind   : {kind}",
+        f"  in     : {fn_name}",
+        f"  at     : {location}",
+    ]
+    source_line = _try_get_source_line(span)
+    if source_line is not None:
+        pointer = _build_pointer_line(span, source_line)
+        lines.append(f"  source : {source_line}")
+        lines.append(f"           {pointer} raised here")
+    lines.append(f"  detail : {detail}")
+    text = "\n".join(lines)
+    return _encode_string_lexeme(text)
+
+
+def _decode_string_lexeme(raw_lexeme: str) -> str:
+    inner = raw_lexeme[1:-1]
+    return bytes(inner, "utf-8").decode("unicode_escape")
+
+
+def _encode_string_lexeme(text: str) -> str:
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+def _try_get_source_line(span: Span) -> str | None:
+    file = span.file
+    if not file or file == "<input>":
+        return None
+    lines = _SOURCE_LINES_CACHE.get(file)
+    if lines is None:
+        try:
+            raw = Path(file).read_text(encoding="utf-8")
+        except OSError:
+            return None
+        lines = raw.splitlines()
+        _SOURCE_LINES_CACHE[file] = lines
+    if span.line < 1 or span.line > len(lines):
+        return None
+    return lines[span.line - 1]
+
+
+def _build_pointer_line(span: Span, source_line: str) -> str:
+    col = max(1, span.col)
+    pointer_width = max(1, span.end - span.start)
+    max_width = max(1, len(source_line) - col + 1)
+    pointer_width = min(pointer_width, max_width, 72)
+    return (" " * (col - 1)) + ("^" * pointer_width)

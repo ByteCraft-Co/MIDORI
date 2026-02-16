@@ -28,6 +28,14 @@ def test_diag_unknown_name() -> None:
     assert "unknown name" in msg
 
 
+def test_diag_duplicate_custom_error_decl() -> None:
+    with pytest.raises(Exception) as exc:
+        _check("error Boom error Boom fn main() -> Int { 0 }")
+    msg = str(exc.value)
+    assert "error[MD3005]" in msg
+    assert "duplicate custom error" in msg
+
+
 def test_diag_immutable_assignment() -> None:
     with pytest.raises(Exception) as exc:
         _check("fn main() -> Int { let x := 1; x = 2; x }")
@@ -70,6 +78,114 @@ def test_diag_ambiguous_variant_constructor() -> None:
     with pytest.raises(Exception) as exc:
         _check("enum A { V } enum B { V } fn main() -> Int { let x := V() 0 }")
     assert "ambiguous variant constructor" in str(exc.value)
+
+
+def test_diag_unary_not_requires_bool() -> None:
+    with pytest.raises(Exception) as exc:
+        _check("fn main() -> Int { let x := !1 x }")
+    msg = str(exc.value)
+    assert "error[MD3102]" in msg
+    assert "expected Bool" in msg
+
+
+def test_diag_print_rejects_enum_values() -> None:
+    with pytest.raises(Exception) as exc:
+        _check("enum E { A } fn main() -> Int { print(A()); 0 }")
+    msg = str(exc.value)
+    assert "error[MD3110]" in msg
+    assert "unsupported print argument type" in msg
+
+
+def test_diag_non_exhaustive_match_is_error() -> None:
+    with pytest.raises(Exception) as exc:
+        _check("fn main() -> Int { let b := true; match b { true => 1 } }")
+    msg = str(exc.value)
+    assert "non-exhaustive match" in msg
+    assert "error[MD3100]" in msg
+
+
+def test_diag_nested_enum_payload_is_rejected(tmp_path) -> None:
+    src = tmp_path / "nested.mdr"
+    src.write_text(
+        """
+fn wrap(v: Int) -> Option[Option[Int]] {
+  Some(Some(v))
+}
+
+fn main() -> Int {
+  let x := wrap(1)
+  match x {
+    Some(y) => 0,
+    None => 0,
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception) as exc:
+        compile_file(src, tmp_path / "nested.exe")
+    msg = str(exc.value)
+    assert "unsupported enum payload type Option[Int]" in msg
+
+
+def test_diag_raise_unknown_custom_error() -> None:
+    with pytest.raises(Exception) as exc:
+        _check(
+            """
+fn main() -> Result[Int, String] {
+  raise MissingKind("boom")
+}
+"""
+        )
+    msg = str(exc.value)
+    assert "error[MD3111]" in msg
+    assert "unknown custom error kind" in msg
+
+
+def test_diag_raise_requires_result_string_return() -> None:
+    with pytest.raises(Exception) as exc:
+        _check(
+            """
+error Oops
+fn main() -> Int {
+  raise Oops("boom")
+}
+"""
+        )
+    msg = str(exc.value)
+    assert "error[MD3112]" in msg
+    assert "functions returning Result" in msg or "`raise` can only be used" in msg
+
+
+def test_diag_raise_requires_string_literal_message() -> None:
+    with pytest.raises(Exception) as exc:
+        _check(
+            """
+error Oops
+fn main() -> Result[Int, String] {
+  let msg := "boom"
+  raise Oops(msg)
+}
+"""
+        )
+    msg = str(exc.value)
+    assert "error[MD3112]" in msg
+    assert "string literal" in msg
+
+
+def test_diag_raise_requires_result_error_type_string() -> None:
+    with pytest.raises(Exception) as exc:
+        _check(
+            """
+error Oops
+fn main() -> Result[Int, Int] {
+  raise Oops("boom")
+}
+"""
+        )
+    msg = str(exc.value)
+    assert "error[MD3102]" in msg or "error[MD3112]" in msg
+    assert "expected String" in msg or "Result[T, String]" in msg
 
 
 def test_diag_use_after_move_nested_scope() -> None:

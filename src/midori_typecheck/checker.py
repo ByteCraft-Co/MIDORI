@@ -96,6 +96,7 @@ def check_program(program: ast.Program, resolution: Resolution) -> TypedProgram:
             fn_types=fn_types,
             enums=enums,
             variants_by_name=resolution.variants_by_name,
+            custom_errors=set(resolution.errors.keys()),
             warnings=warnings,
         )
     return TypedProgram(program=program, functions=typed_funcs, enums=enums, warnings=warnings)
@@ -107,6 +108,7 @@ def _check_function(
     fn_types: dict[str, FunctionType],
     enums: dict[str, EnumInfo],
     variants_by_name: dict[str, list[tuple[str, object]]],
+    custom_errors: set[str],
     warnings: list[str],
 ) -> TypedFunction:
     vars_map: dict[str, _VarState] = {}
@@ -142,8 +144,16 @@ def _check_function(
             return note(expr, vars_map[expr.name].ty)
         if isinstance(expr, ast.UnaryExpr):
             inner = infer(expr.expr)
-            if expr.op in {"-", "!"}:
-                return note(expr, BOOL if expr.op == "!" else inner)
+            if expr.op == "-":
+                if inner not in {INT, FLOAT}:
+                    raise MidoriError(
+                        span=expr.span,
+                        message=f"type mismatch: expected Int or Float, got {inner}",
+                    )
+                return note(expr, inner)
+            if expr.op == "!":
+                _ensure_assignable(BOOL, inner, expr.span)
+                return note(expr, BOOL)
             if expr.op in {"&", "&mut"}:
                 return note(expr, Type("Ref", (inner,)))
             raise MidoriError(span=expr.span, message=f"unsupported unary operator '{expr.op}'")
@@ -180,7 +190,13 @@ def _check_function(
             name = expr.callee.name
             if name == "print":
                 for arg in expr.args:
-                    infer(arg)
+                    arg_ty = infer(arg)
+                    if not _is_printable_type(arg_ty):
+                        raise MidoriError(
+                            span=arg.span,
+                            message=f"unsupported print argument type {arg_ty}",
+                            hint="print supports Int, Float, Bool, Char, and String",
+                        )
                 return note(expr, VOID)
             if name == "read_file":
                 if len(expr.args) != 1:
@@ -276,9 +292,11 @@ def _check_function(
         if isinstance(expr, ast.BlockExpr):
             return note(expr, infer_block(expr))
         if isinstance(expr, ast.RangeExpr):
-            _ensure_assignable(INT, infer(expr.start), expr.start.span)
-            _ensure_assignable(INT, infer(expr.end), expr.end.span)
-            return note(expr, Type("Range"))
+            raise MidoriError(
+                span=expr.span,
+                message="unsupported range expression",
+                hint="range lowering is not implemented yet",
+            )
         if isinstance(expr, ast.PostfixTryExpr):
             inner = infer(expr.expr)
             if inner.name != "Result" or len(inner.args) != 2:
@@ -291,6 +309,29 @@ def _check_function(
                 )
             _ensure_assignable(fn_ret.args[1], inner.args[1], expr.span)
             return note(expr, inner.args[0])
+        if isinstance(expr, ast.RaiseExpr):
+            if expr.kind not in custom_errors:
+                raise MidoriError(
+                    span=expr.span,
+                    message=f"unknown custom error kind '{expr.kind}'",
+                    hint=f"declare it first with `error {expr.kind}`",
+                )
+            fn_ret = fn_types[decl.name].ret
+            if fn_ret.name != "Result" or len(fn_ret.args) != 2:
+                raise MidoriError(
+                    span=expr.span,
+                    message="`raise` can only be used in functions returning Result[T, String]",
+                )
+            _ensure_assignable(STRING, fn_ret.args[1], expr.span)
+            msg_ty = infer(expr.message)
+            _ensure_assignable(STRING, msg_ty, expr.message.span)
+            if not isinstance(expr.message, ast.LiteralExpr) or expr.message.kind != "string":
+                raise MidoriError(
+                    span=expr.message.span,
+                    message="`raise` message must be a string literal",
+                    hint='example: raise MyError("detail")',
+                )
+            return note(expr, UNKNOWN)
         if isinstance(expr, ast.AwaitExpr):
             raise MidoriError(
                 span=expr.span,
@@ -332,14 +373,18 @@ def _check_function(
             if not _is_exhaustive_match(
                 target_ty, saw_catch_all, seen_variants, seen_bool_literals, enums
             ):
-                warnings.append(
-                    f"{expr.span.format()}: warning: non-exhaustive match over type {target_ty}"
+                raise MidoriError(
+                    span=expr.span,
+                    message=f"non-exhaustive match over type {target_ty}",
+                    hint="add missing patterns or a trailing `_ => ...` arm",
                 )
             return note(expr, arm_ty)
         if isinstance(expr, ast.StructInitExpr):
-            for field in expr.fields:
-                infer(field.expr)
-            return note(expr, Type(expr.name))
+            raise MidoriError(
+                span=expr.span,
+                message="unsupported struct initialization expression",
+                hint="struct initialization lowering is not implemented yet",
+            )
         if isinstance(expr, ast.UnsafeExpr):
             return note(expr, infer_block(expr.block))
         raise MidoriError(span=expr.span, message=f"unsupported expression: {type(expr).__name__}")
@@ -408,8 +453,18 @@ def _check_function(
         if isinstance(stmt, ast.ExprStmt):
             infer(stmt.expr)
             return
-        if isinstance(stmt, (ast.BreakStmt, ast.ContinueStmt)):
-            return
+        if isinstance(stmt, ast.BreakStmt):
+            raise MidoriError(
+                span=stmt.span,
+                message="unsupported break statement",
+                hint="loop lowering is not implemented yet",
+            )
+        if isinstance(stmt, ast.ContinueStmt):
+            raise MidoriError(
+                span=stmt.span,
+                message="unsupported continue statement",
+                hint="loop lowering is not implemented yet",
+            )
         raise MidoriError(span=stmt.span, message=f"unsupported statement: {type(stmt).__name__}")
 
     def infer_block(block: ast.BlockExpr) -> Type:
@@ -572,6 +627,10 @@ def _coerce_unknown_type(expected: Type, actual: Type) -> Type:
     if actual.name == "Unknown":
         return expected
     return actual
+
+
+def _is_printable_type(ty: Type) -> bool:
+    return ty in {INT, FLOAT, BOOL, CHAR, STRING}
 
 
 def _merge_branch_types(left: Type, right: Type, span) -> Type:

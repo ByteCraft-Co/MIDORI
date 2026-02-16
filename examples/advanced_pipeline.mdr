@@ -1,0 +1,99 @@
+enum Command {
+  Set(value: Int)
+  Add(delta: Int)
+  Mul(factor: Int)
+  Div(divisor: Int)
+  GuardMin(minimum: Int, reason: String)
+  Tag(label: String)
+  Halt
+}
+
+fn ok_int(value: Int) -> Result[Int, String] {
+  Ok(value)
+}
+
+fn err_int(message: String) -> Result[Int, String] {
+  Err(message)
+}
+
+fn safe_div(value: Int, divisor: Int) -> Result[Int, String] {
+  if divisor == 0 { err_int("division by zero") } else { ok_int(value / divisor) }
+}
+
+fn guard_min(current: Int, minimum: Int, reason: String) -> Result[Int, String] {
+  let out: Result[Int, String] = if current >= minimum { ok_int(current) } else { err_int(reason) }
+  out
+}
+
+fn apply(cmd: Command, current: Int) -> Result[Int, String] {
+  match cmd {
+    Set(v) => ok_int(v),
+    Add(d) => ok_int(current + d),
+    Mul(f) => ok_int(current * f),
+    Div(d) => safe_div(current, d),
+    GuardMin(minimum, reason) => guard_min(current, minimum, reason),
+    Tag(label) => {
+      print("tag")
+      print(label)
+      ok_int(current)
+    },
+    Halt => ok_int(current),
+  }
+}
+
+fn classify(score: Int) -> Option[String] {
+  if score >= 80 {
+    Some("excellent")
+  } else if score >= 50 {
+    Some("stable")
+  } else {
+    None()
+  }
+}
+
+fn summarize(score: Int) -> Result[Int, String] {
+  let band := classify(score)
+  match band {
+    Some(label) => {
+      print("band")
+      print(label)
+      ok_int(score)
+    },
+    None => err_int("score did not map to a label"),
+  }
+}
+
+fn run_critical_path(seed: Int) -> Result[Int, String] {
+  let s0 := apply(Set(seed), 0)?
+  let s1 := apply(Add(25), s0)?
+  let s2 := apply(Mul(3), s1)?
+  let s3 := apply(GuardMin(50, "score below policy"), s2)?
+  let s4 := apply(Div(5), s3)?
+  let s5 := apply(Tag("after-normalization"), s4)?
+  let s6 := apply(Halt(), s5)?
+  summarize(s6)
+}
+
+fn run_failing_path(seed: Int) -> Result[Int, String] {
+  let s0 := apply(Set(seed), 0)?
+  let s1 := apply(Add(2), s0)?
+  let s2 := apply(Div(0), s1)?
+  ok_int(s2)
+}
+
+fn main() -> Int {
+  let ok := run_critical_path(10)
+  let bad := run_failing_path(4)
+
+  match ok {
+    Ok(v) => print(v),
+    Err(e) => print(e),
+  }
+
+  match bad {
+    Ok(v) => print(v),
+    Err(e) => print(e),
+  }
+
+  0
+}

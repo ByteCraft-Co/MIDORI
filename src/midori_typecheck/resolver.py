@@ -26,16 +26,24 @@ class EnumSymbol:
     variants: dict[str, EnumVariantSymbol]
 
 
+@dataclass(frozen=True)
+class ErrorSymbol:
+    name: str
+    decl: ast.ErrorDecl
+
+
 @dataclass
 class Resolution:
     functions: dict[str, FunctionSymbol]
     enums: dict[str, EnumSymbol]
+    errors: dict[str, ErrorSymbol]
     variants_by_name: dict[str, list[tuple[str, EnumVariantSymbol]]]
 
 
 def resolve_names(program: ast.Program) -> Resolution:
     functions: dict[str, FunctionSymbol] = {}
     enums: dict[str, EnumSymbol] = {}
+    errors: dict[str, ErrorSymbol] = {}
     variants_by_name: dict[str, list[tuple[str, EnumVariantSymbol]]] = {}
     for item in program.items:
         if isinstance(item, ast.FunctionDecl):
@@ -65,10 +73,20 @@ def resolve_names(program: ast.Program) -> Resolution:
                 variants[variant.name] = sym
                 variants_by_name.setdefault(variant.name, []).append((item.name, sym))
             enums[item.name] = EnumSymbol(name=item.name, decl=item, variants=variants)
+        if isinstance(item, ast.ErrorDecl):
+            if item.name in errors:
+                raise MidoriError(
+                    span=item.span,
+                    message=f"duplicate custom error '{item.name}'",
+                    hint="rename one custom error declaration",
+                )
+            errors[item.name] = ErrorSymbol(name=item.name, decl=item)
     if "main" not in functions:
         raise MidoriError(
             span=program.span,
             message="missing entry point function 'main'",
             hint="add `fn main() -> Int { ... }`",
         )
-    return Resolution(functions=functions, enums=enums, variants_by_name=variants_by_name)
+    return Resolution(
+        functions=functions, enums=enums, errors=errors, variants_by_name=variants_by_name
+    )
