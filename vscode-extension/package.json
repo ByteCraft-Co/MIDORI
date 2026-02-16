@@ -5,6 +5,10 @@
   "version": "0.0.1",
   "publisher": "midori-placeholder",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ByteCraft-Co/MIDORI.git"
+  },
   "private": true,
   "engines": {
     "vscode": "^1.85.0"
@@ -17,7 +21,7 @@
     "language",
     "compiler"
   ],
-  "icon": "assets/logo-placeholder.png",
+  "icon": "assets/midori-logo.png",
   "contributes": {
     "languages": [
       {
@@ -47,6 +51,7 @@
     ]
   },
   "scripts": {
-    "lint": "echo 'No extension linter configured yet'"
+    "validate:json": "node -e \"const fs=require('fs');const files=['package.json','language-configuration.json','syntaxes/midori.tmLanguage.json','snippets/midori.json'];for(const f of files){JSON.parse(fs.readFileSync(f,'utf8'));}console.log('MIDORI extension JSON validated');\"",
+    "lint": "npm run validate:json"
   }
 }

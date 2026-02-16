@@ -7,7 +7,7 @@ This folder contains a local scaffold for publishing MIDORI language support to 
 - Basic syntax highlighting (TextMate grammar)
 - Editor language configuration (comments/brackets/auto-closing)
 - Snippets
-- Placeholder logo image (`assets/logo-placeholder.png`)
+- Placeholder logo image (`assets/midori-logo.png`)
 
 ## Local Test
 1. Open this folder in VS Code.
@@ -16,7 +16,7 @@ This folder contains a local scaffold for publishing MIDORI language support to 
 
 ## Before Publishing
 - Update `publisher` in `package.json`
-- Replace `assets/logo-placeholder.png` with final logo
+- Replace `assets/midori-logo.png` with final logo
 - Set real `version`, `repository`, and metadata
 - Add CI/publishing workflow for extension packaging (`vsce`)
 
