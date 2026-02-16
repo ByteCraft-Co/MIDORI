@@ -1,23 +1,39 @@
 {
   "name": "midori-language",
-  "displayName": "MIDORI Language Support",
-  "description": "Syntax highlighting and editor support for MIDORI (.mdr)",
-  "version": "0.0.1",
-  "publisher": "midori-placeholder",
+  "displayName": "MIDORI Language Support (Experimental)",
+  "description": "Experimental language support for MIDORI (.mdr): syntax highlighting, snippets, and file icons.",
+  "version": "0.0.3",
+  "publisher": "bytecraftbt",
+  "preview": true,
   "license": "MIT",
-  "private": true,
+  "homepage": "https://midori-docs.vercel.app/",
+  "bugs": {
+    "url": "https://github.com/ByteCraft-Co/MIDORI/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ByteCraft-Co/MIDORI.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:midori",
+    "onCommand:midori.restartLanguageServer"
+  ],
   "categories": [
     "Programming Languages"
   ],
   "keywords": [
     "midori",
     "language",
-    "compiler"
+    "compiler",
+    "experimental",
+    "education",
+    "learning"
   ],
-  "icon": "assets/logo-placeholder.png",
+  "icon": "assets/midori-logo.png",
   "contributes": {
     "languages": [
       {
@@ -29,7 +45,11 @@
         "extensions": [
           ".mdr"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./assets/midori-logo.png",
+          "dark": "./assets/midori-logo.png"
+        }
       }
     ],
     "grammars": [
@@ -44,9 +64,71 @@
         "language": "midori",
         "path": "./snippets/midori.json"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "midori.restartLanguageServer",
+        "title": "MIDORI: Restart Language Server"
+      }
+    ],
+    "problemPatterns": [
+      {
+        "name": "midori-diagnostic",
+        "regexp": "^(.+):(\\d+):(\\d+):\\s(error|warning)(?:\\[(MD\\d{4})\\])?:\\s(.*)$",
+        "file": 1,
+        "line": 2,
+        "column": 3,
+        "severity": 4,
+        "code": 5,
+        "message": 6
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "midori",
+        "owner": "midori",
+        "fileLocation": "absolute",
+        "pattern": "$midori-diagnostic"
+      }
+    ],
+    "configuration": {
+      "title": "MIDORI",
+      "properties": {
+        "midori.lsp.command": {
+          "type": "string",
+          "default": "midori",
+          "markdownDescription": "Executable used by MIDORI LSP diagnostics (for example `midori` or `py`)."
+        },
+        "midori.lsp.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Arguments prepended before `check <temp-file>`. Example for Python module mode: `[\"-m\", \"midori_cli.main\"]`."
+        },
+        "midori.diagnostics.runOnType": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run diagnostics while typing with debounce."
+        },
+        "midori.diagnostics.debounceMs": {
+          "type": "number",
+          "minimum": 50,
+          "default": 250,
+          "description": "Debounce delay for diagnostics when typing."
+        }
+      }
+    }
   },
   "scripts": {
-    "lint": "echo 'No extension linter configured yet'"
+    "validate:json": "node -e \"const fs=require('fs');const files=['package.json','language-configuration.json','syntaxes/midori.tmLanguage.json','snippets/midori.json'];for(const f of files){JSON.parse(fs.readFileSync(f,'utf8'));}console.log('MIDORI extension JSON validated');\"",
+    "validate:runtime": "node --check src/extension.js && node --check src/server.js",
+    "lint": "npm run validate:json && npm run validate:runtime"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
   }
 }

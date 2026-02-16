@@ -22,6 +22,7 @@ dev = [
 
 [project.scripts]
 midori = "midori_cli.main:main"
+midori-terminal = "midori_cli.terminal:main"
 
 [tool.setuptools.package-dir]
 "" = "src"

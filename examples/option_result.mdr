@@ -1,10 +1,25 @@
 fn may_fail(flag: Bool) -> Result[Int, String] {
-  if flag { Ok(42) } else { Err("boom") }
+  if flag { Ok(41) } else { Err("boom") }
+}
+
+fn compute(flag: Bool) -> Result[Int, String] {
+  let v := may_fail(flag)?
+  Ok(v + 1)
 }
 
 fn main() -> Int {
-  // Result/Option syntax is parsed and type-checked; `?` lowering is pending.
-  let good := Ok(3)
-  print(3)
+  let good := compute(true)
+  let bad := compute(false)
+
+  match good {
+    Ok(v) => print(v),
+    Err(e) => print(e),
+  }
+
+  match bad {
+    Ok(v) => print(v),
+    Err(e) => print(e),
+  }
+
   0
 }

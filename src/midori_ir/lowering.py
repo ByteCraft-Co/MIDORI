@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from midori_compiler import ast
 from midori_compiler.errors import MidoriError
+from midori_compiler.span import Span
 from midori_ir.mir import (
     BasicBlock,
     BinOpInstr,
@@ -11,19 +13,29 @@ from midori_ir.mir import (
     CallInstr,
     CondBranchInstr,
     ConstInstr,
+    EnumConstructInstr,
+    EnumFieldInstr,
+    EnumLayout,
+    EnumTagInstr,
+    EnumVariantLayout,
     FunctionIR,
     PhiInstr,
     ProgramIR,
     ReturnInstr,
 )
 from midori_typecheck.checker import TypedProgram
-from midori_typecheck.types import BOOL, INT, STRING, VOID, Type
+from midori_typecheck.types import BOOL, FLOAT, INT, STRING, VOID, Type
+
+_SOURCE_LINES_CACHE: dict[str, list[str]] = {}
 
 
 @dataclass
 class _Builder:
     fn_name: str
+    fn_return_type: Type
     expr_types: dict[int, Type]
+    enum_layouts: dict[str, EnumLayout]
+    user_variant_constructors: dict[str, tuple[str, EnumVariantLayout]]
 
     def __post_init__(self) -> None:
         self.blocks: dict[str, BasicBlock] = {}
@@ -51,11 +63,13 @@ class _Builder:
         self.temp_index += 1
         return name
 
+    def _is_unreachable_block(self, block: BasicBlock) -> bool:
+        return block.name.startswith("dead_")
+
     def lower_expr(self, expr: ast.Expr) -> str:
         if isinstance(expr, ast.LiteralExpr):
             out = self.tmp()
-            ty = self.expr_types[id(expr)]
-            self.emit(ConstInstr(target=out, value=expr.value, ty=ty))
+            self.emit(ConstInstr(target=out, value=expr.value, ty=self.expr_types[id(expr)]))
             return out
         if isinstance(expr, ast.IdentifierExpr):
             return self.env[expr.name]
@@ -81,7 +95,7 @@ class _Builder:
                 out = self.tmp()
                 self.emit(BinOpInstr(target=out, op="^", left=val, right=one, ty=BOOL))
                 return out
-            # Borrow ops are carried for borrow checker only.
+            # Borrow operators are for borrow-check diagnostics only.
             return val
         if isinstance(expr, ast.BinaryExpr):
             left = self.lower_expr(expr.left)
@@ -106,12 +120,36 @@ class _Builder:
         if isinstance(expr, ast.CallExpr):
             if not isinstance(expr.callee, ast.IdentifierExpr):
                 raise MidoriError(
-                    span=expr.span, message="only direct function calls are supported in MVP"
+                    span=expr.span,
+                    message="only direct function calls are supported in v0.2.0",
                 )
+            callee = expr.callee.name
+
+            # Built-in Option/Result constructors are lowered to tagged-union values.
+            if callee in {"Some", "None", "Ok", "Err"}:
+                return self._lower_builtin_enum_constructor(callee, expr)
+
+            # User enum variant constructors by bare variant name.
+            constructor = self.user_variant_constructors.get(callee)
+            if constructor is not None:
+                enum_key, variant = constructor
+                args = [self.lower_expr(a) for a in expr.args]
+                out = self.tmp()
+                self.emit(
+                    EnumConstructInstr(
+                        target=out,
+                        enum_key=enum_key,
+                        variant_index=variant.index,
+                        fields=args,
+                        field_types=variant.field_types,
+                    )
+                )
+                return out
+
             args = [self.lower_expr(a) for a in expr.args]
             ret_ty = self.expr_types[id(expr)]
             target = None if ret_ty == VOID else self.tmp()
-            self.emit(CallInstr(target=target, name=expr.callee.name, args=args, ret_ty=ret_ty))
+            self.emit(CallInstr(target=target, name=callee, args=args, ret_ty=ret_ty))
             return target or ""
         if isinstance(expr, ast.BlockExpr):
             return self.lower_block(expr)
@@ -122,47 +160,356 @@ class _Builder:
             join_bb = self.new_block("join")
             self.terminate(CondBranchInstr(cond=cond, then_bb=then_bb.name, else_bb=else_bb.name))
 
+            old_env = self.env.copy()
             self.current = then_bb
+            self.env = old_env.copy()
             then_val = self.lower_block(expr.then_block)
-            if self.current.terminator is None:
-                self.terminate(BranchInstr(target=join_bb.name))
             then_end = self.current.name
+            then_reaches_join = False
+            if self.current.terminator is None and not self._is_unreachable_block(self.current):
+                self.terminate(BranchInstr(target=join_bb.name))
+                then_reaches_join = True
 
             self.current = else_bb
+            self.env = old_env.copy()
             else_val = ""
             if expr.else_branch:
                 else_val = self.lower_expr(expr.else_branch)
-            if self.current.terminator is None:
-                self.terminate(BranchInstr(target=join_bb.name))
             else_end = self.current.name
+            else_reaches_join = False
+            if self.current.terminator is None and not self._is_unreachable_block(self.current):
+                self.terminate(BranchInstr(target=join_bb.name))
+                else_reaches_join = True
 
             self.current = join_bb
+            self.env = old_env
             ty = self.expr_types[id(expr)]
             if ty == VOID:
                 return ""
+            incomings: list[tuple[str, str]] = []
+            if then_reaches_join:
+                incomings.append((then_end, then_val))
+            if else_reaches_join:
+                incomings.append((else_end, else_val))
+            if not incomings:
+                raise MidoriError(
+                    span=expr.span,
+                    message="if expression does not produce a value because all branches terminate",
+                )
             out = self.tmp()
-            self.emit(
-                PhiInstr(target=out, incomings=[(then_end, then_val), (else_end, else_val)], ty=ty)
-            )
+            self.emit(PhiInstr(target=out, incomings=incomings, ty=ty))
             return out
-        if isinstance(expr, ast.RangeExpr):
-            # Range is parsed/type-checked but not lowered in MVP codegen.
-            raise MidoriError(span=expr.span, message="range lowering is not implemented yet")
         if isinstance(expr, ast.PostfixTryExpr):
-            raise MidoriError(span=expr.span, message="`?` lowering is not implemented yet")
+            return self._lower_try_expr(expr)
+        if isinstance(expr, ast.RaiseExpr):
+            return self._lower_raise_expr(expr)
         if isinstance(expr, ast.MatchExpr):
-            raise MidoriError(span=expr.span, message="match lowering is not implemented yet")
-        if isinstance(expr, ast.StructInitExpr):
-            raise MidoriError(
-                span=expr.span, message="struct initialization lowering is not implemented yet"
-            )
+            return self._lower_match_expr(expr)
         if isinstance(expr, ast.UnsafeExpr):
             return self.lower_block(expr.block)
+        if isinstance(expr, ast.RangeExpr):
+            raise MidoriError(span=expr.span, message="range lowering is not implemented yet")
+        if isinstance(expr, ast.StructInitExpr):
+            raise MidoriError(
+                span=expr.span,
+                message="struct initialization lowering is not implemented yet",
+            )
         if isinstance(expr, (ast.SpawnExpr, ast.AwaitExpr)):
             raise MidoriError(span=expr.span, message="concurrency lowering is not implemented yet")
         raise MidoriError(
-            span=expr.span, message=f"unsupported expression in lowering: {type(expr).__name__}"
+            span=expr.span,
+            message=f"unsupported expression in lowering: {type(expr).__name__}",
         )
+
+    def _lower_builtin_enum_constructor(self, name: str, expr: ast.CallExpr) -> str:
+        out_ty = self.expr_types[id(expr)]
+        enum_key = _enum_key_for_type(out_ty)
+        if enum_key is None:
+            raise MidoriError(
+                span=expr.span, message=f"cannot construct enum value for type {out_ty}"
+            )
+        if enum_key not in self.enum_layouts:
+            raise MidoriError(
+                span=expr.span, message=f"internal error: missing enum layout '{enum_key}'"
+            )
+
+        layout = self.enum_layouts[enum_key]
+        variant_name = name
+        if name == "Some":
+            variant_name = "Some"
+        if name == "None":
+            variant_name = "None"
+        if name == "Ok":
+            variant_name = "Ok"
+        if name == "Err":
+            variant_name = "Err"
+
+        variant = next((v for v in layout.variants if v.name == variant_name), None)
+        if variant is None:
+            raise MidoriError(
+                span=expr.span,
+                message=f"internal error: unknown variant '{variant_name}' for enum '{enum_key}'",
+            )
+        args = [self.lower_expr(a) for a in expr.args]
+        out = self.tmp()
+        self.emit(
+            EnumConstructInstr(
+                target=out,
+                enum_key=enum_key,
+                variant_index=variant.index,
+                fields=args,
+                field_types=variant.field_types,
+            )
+        )
+        return out
+
+    def _lower_try_expr(self, expr: ast.PostfixTryExpr) -> str:
+        inner_ty = self.expr_types[id(expr.expr)]
+        if inner_ty.name != "Result" or len(inner_ty.args) != 2:
+            raise MidoriError(span=expr.span, message="`?` lowering expects Result[T, E]")
+        if self.fn_return_type.name != "Result":
+            raise MidoriError(
+                span=expr.span,
+                message="`?` can only be used in functions returning Result[T, E]",
+            )
+        enum_key = _enum_key_for_type(inner_ty)
+        if enum_key is None:
+            raise MidoriError(span=expr.span, message=f"missing enum key for {inner_ty}")
+
+        result_val = self.lower_expr(expr.expr)
+        tag_val = self.tmp()
+        self.emit(EnumTagInstr(target=tag_val, source=result_val, enum_key=enum_key))
+
+        ok_tag = self.tmp()
+        self.emit(ConstInstr(target=ok_tag, value="0", ty=INT))
+        is_ok = self.tmp()
+        self.emit(BinOpInstr(target=is_ok, op="==", left=tag_val, right=ok_tag, ty=BOOL))
+
+        ok_bb = self.new_block("try_ok")
+        err_bb = self.new_block("try_err")
+        self.terminate(CondBranchInstr(cond=is_ok, then_bb=ok_bb.name, else_bb=err_bb.name))
+
+        self.current = err_bb
+        self.terminate(ReturnInstr(value=result_val))
+
+        self.current = ok_bb
+        out = self.tmp()
+        self.emit(
+            EnumFieldInstr(
+                target=out,
+                source=result_val,
+                enum_key=enum_key,
+                field_index=0,
+                field_ty=inner_ty.args[0],
+            )
+        )
+        return out
+
+    def _lower_raise_expr(self, expr: ast.RaiseExpr) -> str:
+        if self.fn_return_type.name != "Result" or len(self.fn_return_type.args) != 2:
+            raise MidoriError(
+                span=expr.span,
+                message="`raise` lowering expects enclosing function to return Result[T, String]",
+            )
+        enum_key = _enum_key_for_type(self.fn_return_type)
+        if enum_key is None:
+            raise MidoriError(
+                span=expr.span,
+                message=f"internal error: missing enum key for function return {self.fn_return_type}",
+            )
+        if not isinstance(expr.message, ast.LiteralExpr) or expr.message.kind != "string":
+            raise MidoriError(
+                span=expr.span,
+                message="`raise` lowering expects a string literal message",
+            )
+
+        message = _format_raise_message(self.fn_name, expr.kind, expr.message.value, expr.span)
+        msg_temp = self.tmp()
+        self.emit(ConstInstr(target=msg_temp, value=message, ty=STRING))
+
+        err_value = self.tmp()
+        self.emit(
+            EnumConstructInstr(
+                target=err_value,
+                enum_key=enum_key,
+                variant_index=1,
+                fields=[msg_temp],
+                field_types=[self.fn_return_type.args[1]],
+            )
+        )
+        self.terminate(ReturnInstr(value=err_value))
+        self.current = self.new_block("dead")
+        return ""
+
+    def _lower_match_expr(self, expr: ast.MatchExpr) -> str:
+        target_val = self.lower_expr(expr.expr)
+        target_ty = self.expr_types[id(expr.expr)]
+        out_ty = self.expr_types[id(expr)]
+        end_bb = self.new_block("match_end")
+        incoming: list[tuple[str, str]] = []
+
+        base_env = self.env.copy()
+        test_bb = self.current
+        remaining_arms = list(expr.arms)
+        while remaining_arms:
+            arm = remaining_arms.pop(0)
+            arm_bb = self.new_block("match_arm")
+
+            self.current = test_bb
+            cond = self._lower_pattern_condition(arm.pattern, target_val, target_ty)
+            if cond is None:
+                self.terminate(BranchInstr(target=arm_bb.name))
+                test_bb = self.new_block("match_dead")
+                remaining_arms.clear()
+            else:
+                next_bb = self.new_block("match_next")
+                self.terminate(
+                    CondBranchInstr(cond=cond, then_bb=arm_bb.name, else_bb=next_bb.name)
+                )
+                test_bb = next_bb
+
+            self.current = arm_bb
+            self.env = base_env.copy()
+            self._bind_pattern(arm.pattern, target_val, target_ty)
+            arm_val = self.lower_expr(arm.expr)
+            arm_end = self.current.name
+            if self.current.terminator is None and not self._is_unreachable_block(self.current):
+                self.terminate(BranchInstr(target=end_bb.name))
+                if out_ty != VOID:
+                    incoming.append((arm_end, arm_val))
+
+        self.current = test_bb
+        # Remaining fallthrough path is treated as unreachable. Exhaustiveness is
+        # enforced in typecheck; if it regresses, codegen will emit `unreachable`.
+
+        self.current = end_bb
+        self.env = base_env
+        if out_ty == VOID:
+            return ""
+        out = self.tmp()
+        self.emit(PhiInstr(target=out, incomings=incoming, ty=out_ty))
+        return out
+
+    def _lower_pattern_condition(
+        self, pattern: ast.Pattern, target_val: str, target_ty: Type
+    ) -> str | None:
+        if isinstance(pattern, ast.WildcardPattern):
+            return None
+        if isinstance(pattern, ast.NamePattern):
+            enum_key = _enum_key_for_type(target_ty)
+            if enum_key and enum_key in self.enum_layouts:
+                variant = self._lookup_variant(enum_key, pattern.name)
+                if variant and not variant.field_types:
+                    return self._emit_variant_cond(enum_key, target_val, variant.index)
+            return None
+        if isinstance(pattern, ast.LiteralPattern):
+            lit_temp = self.tmp()
+            self.emit(ConstInstr(target=lit_temp, value=pattern.value, ty=target_ty))
+            cond = self.tmp()
+            self.emit(BinOpInstr(target=cond, op="==", left=target_val, right=lit_temp, ty=BOOL))
+            return cond
+        if isinstance(pattern, ast.VariantPattern):
+            enum_key = _enum_key_for_type(target_ty)
+            if not enum_key:
+                raise MidoriError(span=pattern.span, message="variant pattern expects enum target")
+            variant = self._lookup_variant(enum_key, pattern.name)
+            if variant is None:
+                raise MidoriError(
+                    span=pattern.span,
+                    message=f"unknown variant '{pattern.name}' for enum '{enum_key}'",
+                )
+            return self._emit_variant_cond(enum_key, target_val, variant.index)
+        raise MidoriError(
+            span=pattern.span, message=f"unsupported pattern {type(pattern).__name__}"
+        )
+
+    def _emit_variant_cond(self, enum_key: str, target_val: str, variant_index: int) -> str:
+        tag = self.tmp()
+        self.emit(EnumTagInstr(target=tag, source=target_val, enum_key=enum_key))
+        wanted = self.tmp()
+        self.emit(ConstInstr(target=wanted, value=str(variant_index), ty=INT))
+        cond = self.tmp()
+        self.emit(BinOpInstr(target=cond, op="==", left=tag, right=wanted, ty=BOOL))
+        return cond
+
+    def _bind_pattern(self, pattern: ast.Pattern, target_val: str, target_ty: Type) -> None:
+        if isinstance(pattern, ast.NamePattern):
+            enum_key = _enum_key_for_type(target_ty)
+            if enum_key and enum_key in self.enum_layouts:
+                variant = self._lookup_variant(enum_key, pattern.name)
+                if variant and not variant.field_types:
+                    return
+            self.env[pattern.name] = target_val
+            return
+        if isinstance(pattern, ast.VariantPattern):
+            enum_key = _enum_key_for_type(target_ty)
+            if not enum_key:
+                return
+            variant = self._lookup_variant(enum_key, pattern.name)
+            if variant is None:
+                return
+            for i, bind_name in enumerate(pattern.fields):
+                temp = self.tmp()
+                self.emit(
+                    EnumFieldInstr(
+                        target=temp,
+                        source=target_val,
+                        enum_key=enum_key,
+                        field_index=i,
+                        field_ty=variant.field_types[i],
+                    )
+                )
+                self.env[bind_name] = temp
+
+    def _lookup_variant(self, enum_key: str, variant_name: str) -> EnumVariantLayout | None:
+        layout = self.enum_layouts.get(enum_key)
+        if not layout:
+            return None
+        for variant in layout.variants:
+            if variant.name == variant_name:
+                return variant
+        return None
+
+    def _emit_default_value(self, ty: Type) -> str:
+        if ty == VOID:
+            return ""
+        if ty == INT:
+            out = self.tmp()
+            self.emit(ConstInstr(target=out, value="0", ty=INT))
+            return out
+        if ty == FLOAT:
+            out = self.tmp()
+            self.emit(ConstInstr(target=out, value="0.0", ty=FLOAT))
+            return out
+        if ty == BOOL:
+            out = self.tmp()
+            self.emit(ConstInstr(target=out, value="false", ty=BOOL))
+            return out
+        if ty == STRING:
+            out = self.tmp()
+            self.emit(ConstInstr(target=out, value='""', ty=STRING))
+            return out
+        enum_key = _enum_key_for_type(ty)
+        if enum_key and enum_key in self.enum_layouts:
+            layout = self.enum_layouts[enum_key]
+            first = layout.variants[0]
+            field_vals: list[str] = []
+            for f_ty in first.field_types:
+                field_vals.append(self._emit_default_value(f_ty))
+            out = self.tmp()
+            self.emit(
+                EnumConstructInstr(
+                    target=out,
+                    enum_key=enum_key,
+                    variant_index=first.index,
+                    fields=field_vals,
+                    field_types=first.field_types,
+                )
+            )
+            return out
+        out = self.tmp()
+        self.emit(ConstInstr(target=out, value="0", ty=INT))
+        return out
 
     def lower_stmt(self, stmt: ast.Stmt) -> None:
         if isinstance(stmt, ast.LetStmt):
@@ -172,7 +519,6 @@ class _Builder:
         if isinstance(stmt, ast.ReturnStmt):
             value = self.lower_expr(stmt.expr) if stmt.expr else None
             self.terminate(ReturnInstr(value=value))
-            # Keep lowering in a fresh unreachable block to preserve builder invariants.
             self.current = self.new_block("dead")
             return
         if isinstance(stmt, ast.ExprStmt):
@@ -180,29 +526,126 @@ class _Builder:
             return
         if isinstance(stmt, (ast.BreakStmt, ast.ContinueStmt)):
             raise MidoriError(
-                span=stmt.span, message=f"{type(stmt).__name__} lowering is not implemented yet"
+                span=stmt.span,
+                message=f"{type(stmt).__name__} lowering is not implemented yet",
             )
         raise MidoriError(
-            span=stmt.span, message=f"unsupported statement in lowering: {type(stmt).__name__}"
+            span=stmt.span,
+            message=f"unsupported statement in lowering: {type(stmt).__name__}",
         )
 
     def lower_block(self, block: ast.BlockExpr) -> str:
+        old_env = self.env.copy()
         for stmt in block.statements:
             self.lower_stmt(stmt)
         if block.tail:
-            return self.lower_expr(block.tail)
+            out = self.lower_expr(block.tail)
+            self.env = old_env
+            return out
+        self.env = old_env
         return ""
 
 
+def _enum_key_for_type(ty: Type) -> str | None:
+    if ty.name in {"Option", "Result"} and ty.args:
+        return str(ty)
+    if ty.name in {
+        "Int",
+        "Float",
+        "Bool",
+        "Char",
+        "String",
+        "Void",
+        "Range",
+        "Ref",
+        "Ptr",
+        "Unknown",
+    }:
+        return None
+    return ty.name
+
+
+def _collect_type_enums(ty: Type, typed: TypedProgram, out: dict[str, Type]) -> None:
+    key = _enum_key_for_type(ty)
+    if key is not None:
+        if ty.name in typed.enums or ty.name in {"Option", "Result"}:
+            out.setdefault(key, ty)
+    for arg in ty.args:
+        _collect_type_enums(arg, typed, out)
+
+
+def _layout_for_enum_key(enum_key: str, enum_ty: Type, typed: TypedProgram) -> EnumLayout:
+    if enum_key in typed.enums:
+        enum_info = typed.enums[enum_key]
+        variants = [
+            EnumVariantLayout(name=v.name, index=v.index, field_types=v.field_types)
+            for v in sorted(enum_info.variants.values(), key=lambda x: x.index)
+        ]
+        payload_slots = max((len(v.field_types) for v in variants), default=0)
+        return EnumLayout(key=enum_key, variants=variants, payload_slots=payload_slots)
+
+    if enum_ty.name == "Option" and len(enum_ty.args) == 1:
+        # Option[T] -> tag 0 = Some(T), tag 1 = None
+        inner = enum_ty.args[0]
+        variants = [
+            EnumVariantLayout(name="Some", index=0, field_types=[inner]),
+            EnumVariantLayout(name="None", index=1, field_types=[]),
+        ]
+        return EnumLayout(key=enum_key, variants=variants, payload_slots=1)
+
+    if enum_ty.name == "Result" and len(enum_ty.args) == 2:
+        # Result[T, E] -> tag 0 = Ok(T), tag 1 = Err(E)
+        ok_ty = enum_ty.args[0]
+        err_ty = enum_ty.args[1]
+        variants = [
+            EnumVariantLayout(name="Ok", index=0, field_types=[ok_ty]),
+            EnumVariantLayout(name="Err", index=1, field_types=[err_ty]),
+        ]
+        return EnumLayout(key=enum_key, variants=variants, payload_slots=1)
+
+    raise RuntimeError(f"missing enum layout for '{enum_key}'")
+
+
 def lower_typed_program(typed: TypedProgram) -> ProgramIR:
+    enum_types: dict[str, Type] = {}
+    for fn in typed.functions.values():
+        _collect_type_enums(fn.fn_type.ret, typed, enum_types)
+        for p_ty in fn.fn_type.params:
+            _collect_type_enums(p_ty, typed, enum_types)
+        for expr_ty in fn.expr_types.values():
+            _collect_type_enums(expr_ty, typed, enum_types)
+
+    enum_layouts = {
+        key: _layout_for_enum_key(key, enum_types[key], typed) for key in sorted(enum_types)
+    }
+    _ensure_supported_enum_payloads(enum_layouts, typed.program.span)
+
+    user_variant_constructors: dict[str, tuple[str, EnumVariantLayout]] = {}
+    ambiguous: set[str] = set()
+    for key, layout in enum_layouts.items():
+        if key not in typed.enums:
+            continue
+        for variant in layout.variants:
+            if variant.name in user_variant_constructors:
+                ambiguous.add(variant.name)
+                continue
+            user_variant_constructors[variant.name] = (key, variant)
+    for name in ambiguous:
+        user_variant_constructors.pop(name, None)
+
     functions: dict[str, FunctionIR] = {}
     for name, typed_fn in typed.functions.items():
-        builder = _Builder(fn_name=name, expr_types=typed_fn.expr_types)
+        builder = _Builder(
+            fn_name=name,
+            fn_return_type=typed_fn.fn_type.ret,
+            expr_types=typed_fn.expr_types,
+            enum_layouts=enum_layouts,
+            user_variant_constructors=user_variant_constructors,
+        )
         for i, param in enumerate(typed_fn.decl.params):
-            temp = f"%arg{i}"
-            builder.env[param.name] = temp
+            builder.env[param.name] = f"%arg{i}"
         tail = builder.lower_block(typed_fn.decl.body)
-        if builder.current.terminator is None:
+        if builder.current.terminator is None and not builder._is_unreachable_block(builder.current):
             if typed_fn.fn_type.ret == VOID:
                 builder.terminate(ReturnInstr(value=None))
             else:
@@ -216,8 +659,92 @@ def lower_typed_program(typed: TypedProgram) -> ProgramIR:
             blocks=builder.blocks,
             entry=builder.entry,
         )
-    return ProgramIR(functions=functions)
+    return ProgramIR(functions=functions, enums=enum_layouts)
 
 
 def is_codegen_supported_type(ty: Type) -> bool:
-    return ty in {INT, BOOL, STRING, VOID} or ty.name in {"Int", "Bool", "String", "Float"}
+    return ty in {INT, BOOL, STRING, VOID, FLOAT} or _enum_key_for_type(ty) is not None
+
+
+def _ensure_supported_enum_payloads(enum_layouts: dict[str, EnumLayout], span) -> None:
+    for layout in enum_layouts.values():
+        for variant in layout.variants:
+            for field_ty in variant.field_types:
+                if not _is_codegen_supported_payload_type(field_ty):
+                    raise MidoriError(
+                        span=span,
+                        message=(
+                            f"unsupported enum payload type {field_ty} in "
+                            f"{layout.key}.{variant.name}"
+                        ),
+                        hint=(
+                            "enum payload fields currently support Int, Float, Bool, Char, "
+                            "and String"
+                        ),
+                    )
+
+
+def _is_codegen_supported_payload_type(ty: Type) -> bool:
+    if ty.name in {"Int", "Float", "Bool", "Char", "String"}:
+        return True
+    return False
+
+
+def _format_raise_message(fn_name: str, kind: str, raw_lexeme: str, span: Span) -> str:
+    detail = _decode_string_lexeme(raw_lexeme)
+    location = f"{span.file}:{span.line}:{span.col}"
+    lines = [
+        "[MIDORI RAISE]",
+        f"  kind   : {kind}",
+        f"  in     : {fn_name}",
+        f"  at     : {location}",
+    ]
+    source_line = _try_get_source_line(span)
+    if source_line is not None:
+        pointer = _build_pointer_line(span, source_line)
+        lines.append(f"  source : {source_line}")
+        lines.append(f"           {pointer} raised here")
+    lines.append(f"  detail : {detail}")
+    text = "\n".join(lines)
+    return _encode_string_lexeme(text)
+
+
+def _decode_string_lexeme(raw_lexeme: str) -> str:
+    inner = raw_lexeme[1:-1]
+    return bytes(inner, "utf-8").decode("unicode_escape")
+
+
+def _encode_string_lexeme(text: str) -> str:
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+def _try_get_source_line(span: Span) -> str | None:
+    file = span.file
+    if not file or file == "<input>":
+        return None
+    lines = _SOURCE_LINES_CACHE.get(file)
+    if lines is None:
+        try:
+            raw = Path(file).read_text(encoding="utf-8")
+        except OSError:
+            return None
+        lines = raw.splitlines()
+        _SOURCE_LINES_CACHE[file] = lines
+    if span.line < 1 or span.line > len(lines):
+        return None
+    return lines[span.line - 1]
+
+
+def _build_pointer_line(span: Span, source_line: str) -> str:
+    col = max(1, span.col)
+    pointer_width = max(1, span.end - span.start)
+    max_width = max(1, len(source_line) - col + 1)
+    pointer_width = min(pointer_width, max_width, 72)
+    return (" " * (col - 1)) + ("^" * pointer_width)

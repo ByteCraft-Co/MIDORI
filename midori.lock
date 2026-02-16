@@ -1,0 +1,14 @@
+version = 1
+entry = "src/main.mdr"
+
+[package]
+name = "demo"
+version = "0.1.0"
+
+[[sources]]
+path = "src/main.mdr"
+sha256 = "835c8effc33fec6574dd36bab4ee213140668f55d1348ffe12470688b889731d"
+
+[[sources]]
+path = "src/math.mdr"
+sha256 = "fcc314754d9d2daf51c2ca80390655b1f283b39deb6ec06b7170018cbfdd1569"

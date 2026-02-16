@@ -7,7 +7,7 @@
 - Run compiler tests via CLI: `midori test`
 
 ## Repo Map
-- `src/midori_cli`: command-line interface (`build`, `run`, `test`, `fmt`, `repl`)
+- `src/midori_cli`: command-line interface (`build`, `run`, `check`, `test`, `fmt`, `new`, `repl`)
 - `src/midori_compiler`: lexer, parser, AST, diagnostics
 - `src/midori_typecheck`: name resolution, type checking, inference
 - `src/midori_ir`: typed MIR and lowering from AST

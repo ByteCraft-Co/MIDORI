@@ -9,10 +9,16 @@ def kinds(source: str) -> list[TokenKind]:
 
 
 def test_lex_tokens_and_keywords() -> None:
-    src = "fn main() -> Int { let x := 1 + 2; return x }"
+    src = (
+        'import "./util.mdr" '
+        'error Fail fn main() -> Int { let x := 1 + 2; raise Fail("boom"); return x }'
+    )
     got = kinds(src)
+    assert TokenKind.IMPORT in got
+    assert TokenKind.ERROR in got
     assert TokenKind.FN in got
     assert TokenKind.LET in got
+    assert TokenKind.RAISE in got
     assert TokenKind.COLONEQ in got
     assert TokenKind.PLUS in got
     assert got[-1] is TokenKind.EOF

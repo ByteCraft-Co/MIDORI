@@ -2,11 +2,15 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "midori-extension:validate",
+      "label": "midori-extension:lint",
       "type": "shell",
-      "command": "node -e \"const fs=require('fs');const files=['package.json','language-configuration.json','syntaxes/midori.tmLanguage.json','snippets/midori.json'];for (const f of files){JSON.parse(fs.readFileSync(f,'utf8'));}console.log('MIDORI extension JSON validated');\"",
+      "command": "npm run lint",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/d", "/c"]
+        }
       },
       "problemMatcher": []
     }

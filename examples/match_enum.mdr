@@ -4,9 +4,18 @@ enum Token {
   Plus
 }
 
+fn token_value(t: Token) -> Int {
+  match t {
+    Int(v) => v,
+    Ident(name) => 0,
+    Plus => 0,
+  }
+}
+
 fn main() -> Int {
-  // match parses but lowering is not implemented in MVP.
-  let x := 1
-  print(x)
+  let a := Int(7)
+  let b := Plus()
+  print(token_value(a))
+  print(token_value(b))
   0
 }

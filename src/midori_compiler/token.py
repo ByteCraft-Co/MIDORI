@@ -26,6 +26,7 @@ class TokenKind(Enum):
     PUB = auto()
     USE = auto()
     MODULE = auto()
+    IMPORT = auto()
     IF = auto()
     ELSE = auto()
     MATCH = auto()
@@ -41,6 +42,8 @@ class TokenKind(Enum):
     AWAIT = auto()
     UNSAFE = auto()
     EXTERN = auto()
+    ERROR = auto()
+    RAISE = auto()
     TRUE = auto()
     FALSE = auto()
 
@@ -98,6 +101,7 @@ KEYWORDS: dict[str, TokenKind] = {
     "pub": TokenKind.PUB,
     "use": TokenKind.USE,
     "module": TokenKind.MODULE,
+    "import": TokenKind.IMPORT,
     "if": TokenKind.IF,
     "else": TokenKind.ELSE,
     "match": TokenKind.MATCH,
@@ -113,6 +117,8 @@ KEYWORDS: dict[str, TokenKind] = {
     "await": TokenKind.AWAIT,
     "unsafe": TokenKind.UNSAFE,
     "extern": TokenKind.EXTERN,
+    "error": TokenKind.ERROR,
+    "raise": TokenKind.RAISE,
     "true": TokenKind.TRUE,
     "false": TokenKind.FALSE,
 }

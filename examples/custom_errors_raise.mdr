@@ -1,0 +1,47 @@
+error ValidationError
+error ZeroDivisionError
+error PolicyError
+
+fn guarded_div(a: Int, b: Int) -> Result[Int, String] {
+  if a < 0 {
+    raise ValidationError("input must be non-negative")
+  }
+  if b == 0 {
+    raise ZeroDivisionError("division by zero")
+  }
+  Ok(a / b)
+}
+
+fn enforce_policy(score: Int) -> Result[Int, String] {
+  if score < 3 {
+    raise PolicyError("score is below policy threshold")
+  }
+  Ok(score)
+}
+
+fn pipeline(a: Int, b: Int) -> Result[Int, String] {
+  let base := guarded_div(a, b)?
+  let checked := enforce_policy(base)?
+  Ok(checked * 7)
+}
+
+fn main() -> Int {
+  let ok := pipeline(21, 3)
+  let bad_a := pipeline(-1, 3)
+  let bad_b := pipeline(7, 0)
+
+  match ok {
+    Ok(v) => print(v),
+    Err(e) => print(e),
+  }
+  match bad_a {
+    Ok(v) => print(v),
+    Err(e) => print(e),
+  }
+  match bad_b {
+    Ok(v) => print(v),
+    Err(e) => print(e),
+  }
+
+  0
+}

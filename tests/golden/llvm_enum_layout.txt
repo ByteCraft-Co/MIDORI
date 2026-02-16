@@ -1,0 +1,3 @@
+enum_Option_Int_ = {i32, i64}
+enum_Pair = {i32, i64, i64}
+enum_Result_Int__String_ = {i32, i64}
