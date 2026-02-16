@@ -1,0 +1,16 @@
+{
+  "iconDefinitions": {
+    "_mdr": {
+      "iconPath": "../assets/midori-logo.png"
+    }
+  },
+  "fileExtensions": {
+    "mdr": "_mdr"
+  },
+  "fileNames": {
+    "Midori.toml": "_mdr"
+  },
+  "languageIds": {
+    "midori": "_mdr"
+  }
+}

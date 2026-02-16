@@ -1,23 +1,30 @@
-# MIDORI VS Code Extension (Scaffold)
+# MIDORI VS Code Extension
 
-This folder contains a local scaffold for publishing MIDORI language support to Visual Studio Marketplace later.
+Official language support for MIDORI (`.mdr`) in Visual Studio Code.
 
-## Included
+## Features
 - Language registration for `.mdr`
-- Basic syntax highlighting (TextMate grammar)
-- Editor language configuration (comments/brackets/auto-closing)
-- Snippets
-- Placeholder logo image (`assets/midori-logo.png`)
+- Syntax highlighting via TextMate grammar
+- Bracket/comment/auto-closing language configuration
+- Code snippets (`main`, `fn`, `if`)
+- File icon theme mapping for `.mdr` files using `assets/midori-logo.png`
 
-## Local Test
-1. Open this folder in VS Code.
+## Publisher
+- Display: `bytecraft_bt`
+- ID: `bytecraftbt`
+
+## File Icon Behavior
+This extension contributes the `MIDORI Icons` file icon theme and sets it as the default icon theme for MIDORI workspaces through `configurationDefaults`.
+
+When installed, `.mdr` files are mapped to the MIDORI icon (`midori-logo.png`).
+
+## Local Validation
+```bash
+npm run lint
+npx @vscode/vsce package
+```
+
+## Development Host
+1. Open `vscode-extension/` in VS Code.
 2. Press `F5` to launch Extension Development Host.
-3. Open/create a `.mdr` file and verify highlighting/snippets.
-
-## Before Publishing
-- Update `publisher` in `package.json`
-- Replace `assets/midori-logo.png` with final logo
-- Set real `version`, `repository`, and metadata
-- Add CI/publishing workflow for extension packaging (`vsce`)
-
-This scaffold is intentionally not published.
+3. Create/open `.mdr` files and verify highlighting and icon mapping.

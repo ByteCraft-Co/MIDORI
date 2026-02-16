@@ -3,13 +3,12 @@
   "displayName": "MIDORI Language Support",
   "description": "Syntax highlighting and editor support for MIDORI (.mdr)",
   "version": "0.0.1",
-  "publisher": "midori-placeholder",
+  "publisher": "bytecraftbt",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/ByteCraft-Co/MIDORI.git"
   },
-  "private": true,
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -48,10 +47,20 @@
         "language": "midori",
         "path": "./snippets/midori.json"
       }
-    ]
+    ],
+    "iconThemes": [
+      {
+        "id": "midori-icons",
+        "label": "MIDORI Icons",
+        "path": "./icons/midori-icon-theme.json"
+      }
+    ],
+    "configurationDefaults": {
+      "workbench.iconTheme": "midori-icons"
+    }
   },
   "scripts": {
-    "validate:json": "node -e \"const fs=require('fs');const files=['package.json','language-configuration.json','syntaxes/midori.tmLanguage.json','snippets/midori.json'];for(const f of files){JSON.parse(fs.readFileSync(f,'utf8'));}console.log('MIDORI extension JSON validated');\"",
+    "validate:json": "node -e \"const fs=require('fs');const files=['package.json','language-configuration.json','syntaxes/midori.tmLanguage.json','snippets/midori.json','icons/midori-icon-theme.json'];for(const f of files){JSON.parse(fs.readFileSync(f,'utf8'));}console.log('MIDORI extension JSON validated');\"",
     "lint": "npm run validate:json"
   }
 }
