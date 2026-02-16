@@ -2,6 +2,10 @@
 
 MIDORI is a safe-by-default language with an LLVM-backed compiler pipeline implemented in Python (`llvmlite`).
 
+## Website
+
+- Docs/Web: https://midori-docs.vercel.app/
+
 ## Stack Decision
 
 This repository uses **Python + llvmlite** because this environment does not provide Rust/clang toolchains. `llvmlite` gives fast LLVM IR generation and verification with a small setup footprint.
