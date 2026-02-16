@@ -45,6 +45,15 @@ fn main() -> Result[Int, String] {
     assert len(program.items) == 2
 
 
+def test_parser_import_decl() -> None:
+    src = """
+import "./math.mdr"
+fn main() -> Int { 0 }
+"""
+    program = Parser.from_source(src, "imports.mdr").parse()
+    assert len(program.items) == 2
+
+
 def test_parser_reports_error_with_span() -> None:
     src = "fn main( { 0 }"
     try:

@@ -26,6 +26,7 @@ class TokenKind(Enum):
     PUB = auto()
     USE = auto()
     MODULE = auto()
+    IMPORT = auto()
     IF = auto()
     ELSE = auto()
     MATCH = auto()
@@ -100,6 +101,7 @@ KEYWORDS: dict[str, TokenKind] = {
     "pub": TokenKind.PUB,
     "use": TokenKind.USE,
     "module": TokenKind.MODULE,
+    "import": TokenKind.IMPORT,
     "if": TokenKind.IF,
     "else": TokenKind.ELSE,
     "match": TokenKind.MATCH,

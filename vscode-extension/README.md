@@ -2,42 +2,48 @@
 
 Language support for MIDORI (`.mdr`) in Visual Studio Code.
 
-> Status: **Experimental**
-> MIDORI is still evolving and is not yet recommended for production-critical or fully dependent workflows.
-> The current focus is education, language experimentation, and learning compiler concepts.
+Status: experimental. APIs and behavior can change between early versions.
+Distribution: local/dev packaging today (`vsce package`), not published to Marketplace yet.
 
 ## Features
-- Registers the MIDORI language for `.mdr` files
-- Syntax highlighting via TextMate grammar
-- Bracket/comment/auto-closing language configuration
-- Starter snippets (`main`, `fn`, `if`)
-- Diagnostics-only Language Server: live parse/type/borrow diagnostics with red squiggles
-- Problems tab integration from compiler diagnostics and error codes (`MDxxxx`)
-- Contributed problem matcher (`$midori`) for task-based `check`/`build` runs
-- MIDORI file icon for `.mdr` files (`assets/midori-logo.png`)
 
-## Current Limits
-- LSP currently provides diagnostics only (no go-to-definition, rename, completion, hover)
-- Diagnostics are limited compared to mature language toolchains
-- Behavior may change across early releases
+- MIDORI language registration for `.mdr`
+- Syntax highlighting (TextMate grammar)
+- Language configuration (comments, brackets, auto-closing pairs)
+- Snippets (`main`, `fn`, `if`)
+- Diagnostics-only language server with live `midori check` integration
+- Problems-tab diagnostics with MIDORI error codes (`MDxxxx`)
+- Built-in `$midori` problem matcher for task output parsing
+- MIDORI file icon for `.mdr` (`assets/midori-logo.png`)
+- `MIDORI: Restart Language Server` command
 
-## File Icon Behavior
-This extension does not force or replace your active icon theme.
-`.mdr` files use the MIDORI language icon (`midori-logo.png`) while other file types continue using your normal icon theme.
+## What The Language Server Does
 
-## Links
-- Docs: https://midori-docs.vercel.app/
-- Repo: https://github.com/ByteCraft-Co/MIDORI
-- Issues: https://github.com/ByteCraft-Co/MIDORI/issues
+The extension server runs the configured MIDORI command against a temporary file:
 
-## Diagnostics Settings
-- `midori.lsp.command` (default: `midori`)
-- `midori.lsp.args` (default: `[]`, example: `["-m", "midori_cli.main"]` when using `py`)
-- `midori.diagnostics.runOnType` (default: `true`)
-- `midori.diagnostics.debounceMs` (default: `250`)
+```text
+<midori.lsp.command> <midori.lsp.args...> check <temp-file>
+```
+
+Compiler diagnostics are parsed and reported as editor squiggles and Problems entries.
+
+## Requirements
+
+- MIDORI CLI installed and available from your configured command
+- VS Code 1.85+
+
+Default expected command is `midori`.
+
+## Settings
+
+- `midori.lsp.command`: default `"midori"`, example `"py"`
+- `midori.lsp.args`: default `[]`, module-mode example `["-m", "midori_cli.main"]`
+- `midori.diagnostics.runOnType`: default `true`
+- `midori.diagnostics.debounceMs`: default `250` (minimum `50`)
 
 ## Task-Based Diagnostics
-Use the MIDORI problem matcher in workspace tasks to surface diagnostics from CLI runs:
+
+You can use the contributed `$midori` problem matcher in `tasks.json`:
 
 ```json
 {
@@ -54,14 +60,28 @@ Use the MIDORI problem matcher in workspace tasks to surface diagnostics from CL
 }
 ```
 
-## Local Validation
+## Current Limits
+
+- Diagnostics only (no completion, hover, go-to-definition, rename, or code actions)
+- Diagnostic fidelity depends on current compiler output format
+- No formatter integration from the extension itself yet
+
+## Local Development
+
 ```bash
 npm install
 npm run lint
 npx @vscode/vsce package
 ```
 
-## Development Host
-1. Open `vscode-extension/` in VS Code.
+Run in VS Code:
+
+1. Open `vscode-extension/`.
 2. Press `F5` to launch Extension Development Host.
-3. Create/open `.mdr` files and verify highlighting and live diagnostics.
+3. Open `.mdr` files and confirm highlighting and diagnostics.
+
+## Links
+
+- Docs: https://midori-docs.vercel.app/
+- Repo: https://github.com/ByteCraft-Co/MIDORI
+- Issues: https://github.com/ByteCraft-Co/MIDORI/issues

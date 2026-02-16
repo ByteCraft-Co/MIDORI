@@ -89,3 +89,52 @@ def test_cli_internal_error_boundary(
         main()
     assert exc.value.code == 1
     assert "internal compiler error: boom" in capsys.readouterr().out
+
+
+def test_cli_check_uses_project_manifest_when_source_omitted(
+    tmp_path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    entry = src_dir / "main.mdr"
+    entry.write_text(
+        "fn main() -> Int {\n  print(\"ok\")\n  0\n}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "midori.toml").write_text(
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[build]\nentry = \"src/main.mdr\"\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["midori", "check"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    assert f"checked {entry}" in capsys.readouterr().out
+
+
+def test_cli_lock_generates_lockfile(
+    tmp_path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = tmp_path / "main.mdr"
+    entry.write_text("fn main() -> Int { 0 }\n", encoding="utf-8")
+    (tmp_path / "midori.toml").write_text(
+        "[package]\nname = \"demo\"\nversion = \"0.2.0\"\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["midori", "lock", str(entry)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+
+    lock_path = tmp_path / "midori.lock"
+    assert lock_path.exists()
+    lock_text = lock_path.read_text(encoding="utf-8")
+    assert 'name = "demo"' in lock_text
+    assert 'version = "0.2.0"' in lock_text
+    assert "[[sources]]" in lock_text
+    assert "sha256" in lock_text
+    assert f"wrote {lock_path}" in capsys.readouterr().out

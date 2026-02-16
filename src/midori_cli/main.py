@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 
 from midori_cli.formatter import format_source
-from midori_cli.pipeline import check_file, compile_file
+from midori_cli.pipeline import check_file, compile_file, resolve_entry_file, write_lockfile
 from midori_compiler.errors import MidoriError
 
 
@@ -26,15 +26,19 @@ def _resolve_version() -> str:
 
 
 def _cmd_build(args: argparse.Namespace) -> int:
-    src = Path(args.source)
-    out = Path(args.output) if args.output else src.with_suffix(".exe")
+    src = Path(args.source) if args.source else None
+    if args.output:
+        out = Path(args.output)
+    else:
+        entry = resolve_entry_file(src)
+        out = entry.with_suffix(".exe")
     compile_file(src, out, emit_llvm=args.emit_llvm, emit_asm=args.emit_asm)
     print(f"built {out}")
     return 0
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    src = Path(args.source)
+    src = Path(args.source) if args.source else None
     with tempfile.TemporaryDirectory(prefix="midori-") as tmp:
         out = Path(tmp) / "program.exe"
         compile_file(src, out)
@@ -43,9 +47,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_check(args: argparse.Namespace) -> int:
-    src = Path(args.source)
+    src = Path(args.source) if args.source else None
+    entry = resolve_entry_file(src)
     check_file(src)
-    print(f"checked {src}")
+    print(f"checked {entry}")
+    return 0
+
+
+def _cmd_lock(args: argparse.Namespace) -> int:
+    src = Path(args.source) if args.source else None
+    out = Path(args.output) if args.output else None
+    lock_path = write_lockfile(src, output=out)
+    print(f"wrote {lock_path}")
     return 0
 
 
@@ -139,20 +152,32 @@ def main() -> None:
     parser.add_argument("--version", action="version", version=f"midori {_resolve_version()}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_build = sub.add_parser("build", help="compile a .mdr file into an executable")
-    p_build.add_argument("source")
+    p_build = sub.add_parser(
+        "build", help="compile a .mdr file or the current project entry into an executable"
+    )
+    p_build.add_argument("source", nargs="?", default=None)
     p_build.add_argument("-o", "--output", default=None)
     p_build.add_argument("--emit-llvm", action="store_true", help="write LLVM IR beside output")
     p_build.add_argument("--emit-asm", action="store_true", help="write assembly beside output")
     p_build.set_defaults(fn=_cmd_build)
 
-    p_run = sub.add_parser("run", help="build and run a .mdr file")
-    p_run.add_argument("source")
+    p_run = sub.add_parser("run", help="build and run a .mdr file or current project entry")
+    p_run.add_argument("source", nargs="?", default=None)
     p_run.set_defaults(fn=_cmd_run)
 
-    p_check = sub.add_parser("check", help="run frontend checks without building an executable")
-    p_check.add_argument("source")
+    p_check = sub.add_parser(
+        "check", help="run frontend checks for a .mdr file or current project entry"
+    )
+    p_check.add_argument("source", nargs="?", default=None)
     p_check.set_defaults(fn=_cmd_check)
+
+    p_lock = sub.add_parser(
+        "lock",
+        help="generate deterministic midori.lock from a source file or current project entry",
+    )
+    p_lock.add_argument("source", nargs="?", default=None)
+    p_lock.add_argument("-o", "--output", default=None)
+    p_lock.set_defaults(fn=_cmd_lock)
 
     p_test = sub.add_parser("test", help="run unit and integration tests")
     p_test.set_defaults(fn=_cmd_test)

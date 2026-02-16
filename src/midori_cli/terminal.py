@@ -83,7 +83,7 @@ def _parse_build_args(args: list[str]) -> tuple[Path, Path, bool, bool] | None:
     return src_path, out_path, emit_llvm, emit_asm
 
 
-DECLARATION_START_RE = re.compile(r"^(error|fn|struct|enum|trait|extern)\b")
+DECLARATION_START_RE = re.compile(r"^(import|error|fn|struct|enum|trait|extern)\b")
 MAIN_FN_RE = re.compile(r"^\s*fn\s+main\s*\(", re.MULTILINE)
 
 
@@ -277,7 +277,7 @@ class MidoriTerminal:
         print("  :cancel                    Cancel current multiline declaration")
         print("  !<command>                 Shortcut for :shell")
         print("  :quit                      Exit terminal")
-        print("  error/fn/...               Top-level declarations support multiline input")
+        print("  import/error/fn/...        Top-level declarations support multiline input")
         print("  <expression>               Evaluate Midori expression")
 
     def _program_has_main(self, declarations: list[str]) -> bool:

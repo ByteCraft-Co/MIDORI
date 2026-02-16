@@ -93,7 +93,20 @@ class ErrorDecl(Node):
     name: str
 
 
-Item = FunctionDecl | ExternFunctionDecl | StructDecl | EnumDecl | TraitDecl | ErrorDecl
+@dataclass
+class ImportDecl(Node):
+    path: str
+
+
+Item = (
+    FunctionDecl
+    | ExternFunctionDecl
+    | StructDecl
+    | EnumDecl
+    | TraitDecl
+    | ErrorDecl
+    | ImportDecl
+)
 
 
 @dataclass

@@ -1,0 +1,6 @@
+import "./math.mdr"
+
+fn main() -> Int {
+  print(plus_one(41))
+  0
+}

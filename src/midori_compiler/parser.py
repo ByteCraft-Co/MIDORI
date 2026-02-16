@@ -27,6 +27,10 @@ class Parser:
     def _parse_item(self) -> ast.Item:
         is_pub = self._match(TokenKind.PUB)
         is_task = self._match(TokenKind.TASK)
+        if self._match(TokenKind.IMPORT):
+            if is_pub or is_task:
+                raise self._error_here("`import` cannot be prefixed with pub/task")
+            return self._parse_import_decl()
         if self._match(TokenKind.FN):
             return self._parse_fn(is_pub=is_pub, is_task=is_task)
         if self._match(TokenKind.EXTERN):
@@ -39,7 +43,13 @@ class Parser:
             return self._parse_trait()
         if self._match(TokenKind.ERROR):
             return self._parse_error_decl()
-        raise self._error_here("expected item", "start with fn/struct/enum/trait/extern/error")
+        raise self._error_here(
+            "expected item", "start with import/fn/struct/enum/trait/extern/error"
+        )
+
+    def _parse_import_decl(self) -> ast.ImportDecl:
+        path = self._expect(TokenKind.STRING, "expected import path string, e.g. \"./util.mdr\"")
+        return ast.ImportDecl(span=path.span, path=path.lexeme.strip('"'))
 
     def _parse_fn(self, *, is_pub: bool, is_task: bool) -> ast.FunctionDecl:
         name = self._expect(TokenKind.IDENT, "expected function name")
