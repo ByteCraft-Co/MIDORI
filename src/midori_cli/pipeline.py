@@ -10,7 +10,8 @@ from midori_compiler.lexer import Lexer
 from midori_compiler.parser import Parser
 from midori_ir.borrow import run_borrow_check
 from midori_ir.lowering import lower_typed_program
-from midori_typecheck.checker import check_program
+from midori_ir.mir import ProgramIR
+from midori_typecheck.checker import TypedProgram, check_program
 from midori_typecheck.resolver import resolve_names
 
 
@@ -21,6 +22,30 @@ class CompileResult:
     exe_path: Path
 
 
+@dataclass
+class CheckResult:
+    typed: TypedProgram
+    mir: ProgramIR
+
+
+def _analyze_file(path: Path) -> CheckResult:
+    source = path.read_text(encoding="utf-8")
+    tokens = Lexer(source, str(path)).tokenize()
+    program = Parser(tokens).parse()
+    resolution = resolve_names(program)
+    typed = check_program(program, resolution)
+    run_borrow_check(typed)
+    mir = lower_typed_program(typed)
+    return CheckResult(typed=typed, mir=mir)
+
+
+def check_file(path: Path) -> CheckResult:
+    result = _analyze_file(path)
+    for warning in result.typed.warnings:
+        print(warning, file=sys.stderr)
+    return result
+
+
 def compile_file(
     path: Path,
     out_exe: Path,
@@ -29,17 +54,11 @@ def compile_file(
     emit_asm: bool = False,
 ) -> CompileResult:
     out_exe.parent.mkdir(parents=True, exist_ok=True)
-    source = path.read_text(encoding="utf-8")
-    tokens = Lexer(source, str(path)).tokenize()
-    program = Parser(tokens).parse()
-    resolution = resolve_names(program)
-    typed = check_program(program, resolution)
-    for warning in typed.warnings:
+    checked = _analyze_file(path)
+    for warning in checked.typed.warnings:
         print(warning, file=sys.stderr)
-    run_borrow_check(typed)
-    mir = lower_typed_program(typed)
     codegen = LLVMCodegen()
-    llvm_ir = codegen.emit_module(mir)
+    llvm_ir = codegen.emit_module(checked.mir)
 
     if emit_asm:
         asm_path = out_exe.with_suffix(".s")

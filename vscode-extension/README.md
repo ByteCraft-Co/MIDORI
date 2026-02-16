@@ -1,22 +1,32 @@
-# MIDORI VS Code Extension
+# MIDORI Language Support (Experimental)
 
-Official language support for MIDORI (`.mdr`) in Visual Studio Code.
+Language support for MIDORI (`.mdr`) in Visual Studio Code.
+
+> Status: **Experimental**
+> MIDORI is still evolving and is not yet recommended for production-critical or fully dependent workflows.
+> The current focus is education, language experimentation, and learning compiler concepts.
 
 ## Features
-- Language registration for `.mdr`
+- Registers the MIDORI language for `.mdr` files
 - Syntax highlighting via TextMate grammar
 - Bracket/comment/auto-closing language configuration
-- Code snippets (`main`, `fn`, `if`)
-- File icon theme mapping for `.mdr` files using `assets/midori-logo.png`
+- Starter snippets (`main`, `fn`, `if`)
+- MIDORI file icon for `.mdr` files (`assets/midori-logo.png`)
 
-## Publisher
-- Display: `bytecraft_bt`
-- ID: `bytecraftbt`
+## Current Limits
+- No full LSP features yet (go-to-definition, rename, symbol indexing)
+- Diagnostics are limited compared to mature language toolchains
+- Behavior may change across early releases
 
 ## File Icon Behavior
-This extension contributes the `MIDORI Icons` file icon theme and sets it as the default icon theme for MIDORI workspaces through `configurationDefaults`.
+This extension contributes the `MIDORI Icons` theme and maps `.mdr` files to the MIDORI logo.
+It does not override your active VS Code icon theme, so other file icons keep their normal appearance.
+If you want the MIDORI-specific icon mapping, select `MIDORI Icons` manually in VS Code.
 
-When installed, `.mdr` files are mapped to the MIDORI icon (`midori-logo.png`).
+## Links
+- Docs: https://midori-docs.vercel.app/
+- Repo: https://github.com/ByteCraft-Co/MIDORI
+- Issues: https://github.com/ByteCraft-Co/MIDORI/issues
 
 ## Local Validation
 ```bash

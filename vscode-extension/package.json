@@ -1,10 +1,15 @@
 {
   "name": "midori-language",
-  "displayName": "MIDORI Language Support",
-  "description": "Syntax highlighting and editor support for MIDORI (.mdr)",
-  "version": "0.0.1",
+  "displayName": "MIDORI Language Support (Experimental)",
+  "description": "Experimental language support for MIDORI (.mdr): syntax highlighting, snippets, and file icons.",
+  "version": "0.0.2",
   "publisher": "bytecraftbt",
+  "preview": true,
   "license": "MIT",
+  "homepage": "https://midori-docs.vercel.app/",
+  "bugs": {
+    "url": "https://github.com/ByteCraft-Co/MIDORI/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/ByteCraft-Co/MIDORI.git"
@@ -18,7 +23,10 @@
   "keywords": [
     "midori",
     "language",
-    "compiler"
+    "compiler",
+    "experimental",
+    "education",
+    "learning"
   ],
   "icon": "assets/midori-logo.png",
   "contributes": {
@@ -32,7 +40,11 @@
         "extensions": [
           ".mdr"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./assets/midori-logo.png",
+          "dark": "./assets/midori-logo.png"
+        }
       }
     ],
     "grammars": [
@@ -54,10 +66,7 @@
         "label": "MIDORI Icons",
         "path": "./icons/midori-icon-theme.json"
       }
-    ],
-    "configurationDefaults": {
-      "workbench.iconTheme": "midori-icons"
-    }
+    ]
   },
   "scripts": {
     "validate:json": "node -e \"const fs=require('fs');const files=['package.json','language-configuration.json','syntaxes/midori.tmLanguage.json','snippets/midori.json','icons/midori-icon-theme.json'];for(const f of files){JSON.parse(fs.readFileSync(f,'utf8'));}console.log('MIDORI extension JSON validated');\"",

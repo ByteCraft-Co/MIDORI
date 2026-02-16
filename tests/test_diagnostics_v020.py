@@ -24,13 +24,16 @@ def test_diag_unknown_name() -> None:
         _check("fn main() -> Int { x }")
     msg = str(exc.value)
     assert "diag.mdr:1" in msg
+    assert "error[MD3101]" in msg
     assert "unknown name" in msg
 
 
 def test_diag_immutable_assignment() -> None:
     with pytest.raises(Exception) as exc:
         _check("fn main() -> Int { let x := 1; x = 2; x }")
-    assert "cannot assign to immutable variable" in str(exc.value)
+    msg = str(exc.value)
+    assert "error[MD3103]" in msg
+    assert "cannot assign to immutable variable" in msg
 
 
 def test_diag_wrong_argument_count() -> None:
@@ -87,7 +90,9 @@ fn main() -> Int {
 }
 """
         )
-    assert "use after move" in str(exc.value)
+    msg = str(exc.value)
+    assert "error[MD4001]" in msg
+    assert "use after move" in msg
 
 
 def test_diag_borrow_after_branch_move() -> None:

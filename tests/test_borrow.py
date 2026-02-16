@@ -25,7 +25,9 @@ fn main() -> Int {
 """
     with pytest.raises(Exception) as exc:
         _borrow_check(src)
-    assert "use after move" in str(exc.value)
+    msg = str(exc.value)
+    assert "error[MD4001]" in msg
+    assert "use after move" in msg
 
 
 def test_aliasing_mut_and_immut_borrow_error() -> None:
@@ -39,4 +41,6 @@ fn main() -> Int {
 """
     with pytest.raises(Exception) as exc:
         _borrow_check(src)
-    assert "cannot mutably borrow" in str(exc.value)
+    msg = str(exc.value)
+    assert "error[MD4002]" in msg
+    assert "cannot mutably borrow" in msg

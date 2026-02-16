@@ -1,13 +1,27 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import subprocess
 import tempfile
+import tomllib
 from pathlib import Path
 
 from midori_cli.formatter import format_source
-from midori_cli.pipeline import compile_file
+from midori_cli.pipeline import check_file, compile_file
 from midori_compiler.errors import MidoriError
+
+
+def _resolve_version() -> str:
+    try:
+        return importlib.metadata.version("midori")
+    except importlib.metadata.PackageNotFoundError:
+        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        try:
+            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+            return str(data["project"]["version"])
+        except (FileNotFoundError, KeyError, OSError, tomllib.TOMLDecodeError):
+            return "0.0.0-dev"
 
 
 def _cmd_build(args: argparse.Namespace) -> int:
@@ -25,6 +39,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
         compile_file(src, out)
         proc = subprocess.run([str(out)], check=False)
         return proc.returncode
+
+
+def _cmd_check(args: argparse.Namespace) -> int:
+    src = Path(args.source)
+    check_file(src)
+    print(f"checked {src}")
+    return 0
 
 
 def _cmd_test(_args: argparse.Namespace) -> int:
@@ -68,6 +89,7 @@ def _cmd_repl(_args: argparse.Namespace) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="midori")
+    parser.add_argument("--version", action="version", version=f"midori {_resolve_version()}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_build = sub.add_parser("build", help="compile a .mdr file into an executable")
@@ -80,6 +102,10 @@ def main() -> None:
     p_run = sub.add_parser("run", help="build and run a .mdr file")
     p_run.add_argument("source")
     p_run.set_defaults(fn=_cmd_run)
+
+    p_check = sub.add_parser("check", help="run frontend checks without building an executable")
+    p_check.add_argument("source")
+    p_check.set_defaults(fn=_cmd_check)
 
     p_test = sub.add_parser("test", help="run unit and integration tests")
     p_test.set_defaults(fn=_cmd_test)

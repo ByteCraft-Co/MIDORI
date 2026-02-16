@@ -19,9 +19,11 @@ py -m pip install -e .[dev]
 ## CLI
 
 ```bash
+py -m midori_cli.main --version
 py -m midori_cli.main build examples/hello.mdr -o hello.exe
 py -m midori_cli.main build examples/hello.mdr -o hello.exe --emit-llvm --emit-asm
 py -m midori_cli.main run examples/hello.mdr
+py -m midori_cli.main check examples/hello.mdr
 py -m midori_cli.main test
 py -m midori_cli.main fmt examples/hello.mdr
 py -m midori_cli.main repl

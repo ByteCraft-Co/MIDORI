@@ -41,6 +41,7 @@ def test_parser_reports_error_with_span() -> None:
     except Exception as exc:  # noqa: BLE001
         msg = str(exc)
         assert "bad_parse.mdr:1" in msg
+        assert "error[MD2001]" in msg
         assert "expected parameter name" in msg or "expected ')'" in msg
     else:
         raise AssertionError("expected parser error")
