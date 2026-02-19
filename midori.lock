@@ -7,8 +7,8 @@ version = "0.1.0"
 
 [[sources]]
 path = "src/main.mdr"
-sha256 = "835c8effc33fec6574dd36bab4ee213140668f55d1348ffe12470688b889731d"
+sha256 = "f85bbf9521595ef61695fd2c19a438d08db704af327b77ee32da944ffd4b5c5a"
 
 [[sources]]
 path = "src/math.mdr"
-sha256 = "fcc314754d9d2daf51c2ca80390655b1f283b39deb6ec06b7170018cbfdd1569"
+sha256 = "952a57b8b82484e77f3326eb1ce3f43c4d0d730dac4c6724f3ded8ea9ea58aab"

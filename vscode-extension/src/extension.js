@@ -19,6 +19,8 @@ function readInitializationOptions() {
     maxWorkspaceFiles: config.get("intellisense.maxWorkspaceFiles", 1500),
     maxExternalIndexEntries: config.get("intellisense.maxExternalIndexEntries", 750),
     allowExternalImports: config.get("intellisense.allowExternalImports", false),
+    fuzzyKeywordSuggestions: config.get("intellisense.fuzzyKeywordSuggestions", true),
+    fuzzyMaxEditDistance: config.get("intellisense.fuzzyMaxEditDistance", 2),
     workspaceRoot: folder || process.cwd(),
   };
 }
