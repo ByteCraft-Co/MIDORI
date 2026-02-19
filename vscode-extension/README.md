@@ -13,7 +13,7 @@ Distribution: local/dev packaging today (`vsce package`), not published to Marke
 - Snippets (`main`, `fn`, `if`)
 - Language server with:
   - live diagnostics (`midori check`)
-  - completion (keywords, builtins, symbols, imports, import-paths)
+  - completion (canonical keywords, fuzzy keyword suggestions, builtins, symbols, imports, import-paths)
   - hover info
   - signature help
   - go-to-definition
@@ -21,6 +21,9 @@ Distribution: local/dev packaging today (`vsce package`), not published to Marke
   - rename symbol (scope-aware)
   - document symbols (outline)
   - workspace symbol search
+- Canonical compiler keyword dictionary synced with lexer keywords
+- Suggestion-only typo assistance for MIDORI keywords (no automatic source edits)
+- Expanded symbol indexing for structs, fields, traits, and trait methods
 - Problems-tab diagnostics with MIDORI error codes (`MDxxxx`)
 - Built-in `$midori` problem matcher for task output parsing
 - MIDORI file icon for `.mdr` (`assets/midori-logo.png`)
@@ -58,6 +61,8 @@ Default expected command is `midori`.
 - `midori.intellisense.maxWorkspaceFiles`: default `1500`
 - `midori.intellisense.maxExternalIndexEntries`: default `750`
 - `midori.intellisense.allowExternalImports`: default `false`
+- `midori.intellisense.fuzzyKeywordSuggestions`: default `true`
+- `midori.intellisense.fuzzyMaxEditDistance`: default `2` (allowed `1..2`)
 
 ## Task-Based Diagnostics
 
@@ -80,7 +85,7 @@ You can use the contributed `$midori` problem matcher in `tasks.json`:
 
 ## Current Limits
 
-- IntelliSense is heuristic and currently focuses on practical local/imported symbol resolution
+- IntelliSense is heuristic and focuses on practical local/imported symbol resolution
 - Rename/references for heavily ambiguous symbols may be conservative to avoid unsafe edits
 - Diagnostic fidelity depends on current compiler output format
 - No formatter integration from the extension itself yet

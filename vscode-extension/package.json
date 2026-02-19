@@ -158,14 +158,27 @@
           "type": "boolean",
           "default": false,
           "description": "Allow IntelliSense import resolution outside the workspace root."
+        },
+        "midori.intellisense.fuzzyKeywordSuggestions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable suggestion-only fuzzy keyword IntelliSense for likely typo inputs."
+        },
+        "midori.intellisense.fuzzyMaxEditDistance": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 2,
+          "default": 2,
+          "description": "Maximum edit distance used for fuzzy keyword suggestions."
         }
       }
     }
   },
   "scripts": {
     "validate:json": "node -e \"const fs=require('fs');const files=['package.json','language-configuration.json','syntaxes/midori.tmLanguage.json','snippets/midori.json'];for(const f of files){JSON.parse(fs.readFileSync(f,'utf8'));}console.log('MIDORI extension JSON validated');\"",
-    "validate:runtime": "node --check src/extension.js && node --check src/server.js",
-    "lint": "npm run validate:json && npm run validate:runtime"
+    "validate:runtime": "node -e \"const fs=require('fs');const path=require('path');const cp=require('child_process');function walk(dir){const out=[];for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const full=path.join(dir,entry.name);if(entry.isDirectory()){out.push(...walk(full));continue;}if(entry.isFile()&&full.endsWith('.js')){out.push(full);}}return out;}for(const f of walk('src')){cp.execFileSync(process.execPath,['--check',f],{stdio:'inherit'});}console.log('MIDORI extension runtime JS validated');\"",
+    "lint": "npm run validate:json && npm run validate:runtime",
+    "test": "node --test"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1",

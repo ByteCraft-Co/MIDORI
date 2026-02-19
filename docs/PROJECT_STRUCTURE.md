@@ -14,6 +14,18 @@ MIDORI is organized by compiler pipeline stage plus tooling surfaces.
 
 - `src/midori_cli`: CLI commands (`build`, `run`, `check`, `test`, `fmt`, `new`, `repl`).
 - `vscode-extension`: VS Code language extension + language server.
+- `vscode-extension/src/lsp`: modular language server internals:
+  - `main.js`: LSP wiring and handler registration.
+  - `config.js`: settings defaults and normalization.
+  - `diagnostics.js`: `midori check` execution and diagnostic parsing.
+  - `lexicon.js`: canonical keywords/types/builtins and keyword docs.
+  - `fuzzy.js`: suggestion ranking/edit-distance helpers.
+  - `symbol-index.js`: document symbol indexing.
+  - `symbol-resolution.js`: hover/definition/references/rename/symbol queries.
+  - `completion.js`: keyword/type/builtin/symbol completion assembly.
+  - `import-completion.js`: import path completion provider.
+  - `workspace.js`: workspace scanning and external index caching.
+  - `utils-text.js`, `utils-path.js`: shared text/path helpers.
 - `installer/windows`: Inno Setup specs and installer build scripts.
 
 ## Quality Gates

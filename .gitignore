@@ -17,6 +17,10 @@ installer/windows/output/**
 !installer/windows/output/v0.1.0/.gitkeep
 !installer/windows/output/v0.2.0/
 !installer/windows/output/v0.2.0/.gitkeep
+!installer/windows/output/v0.2.1/
+!installer/windows/output/v0.2.1/.gitkeep
+!installer/windows/output/v0.2.2/
+!installer/windows/output/v0.2.2/.gitkeep
 *.exe
 *.ll
 *.s

@@ -67,7 +67,7 @@
       "patterns": [
         {
           "name": "keyword.control.midori",
-          "match": "\\b(fn|let|var|struct|enum|trait|impl|pub|use|module|if|else|match|for|in|while|loop|break|continue|return|task|spawn|await|unsafe|extern)\\b"
+          "match": "\\b(fn|let|var|struct|enum|trait|impl|pub|use|module|import|if|else|match|for|in|while|loop|break|continue|return|task|spawn|await|unsafe|extern|error|raise)\\b"
         },
         {
           "name": "constant.language.boolean.midori",
