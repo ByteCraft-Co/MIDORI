@@ -4,7 +4,7 @@ MIDORI is an experimental, safe-by-default language with an LLVM-backed compiler
 
 ## Website
 
-- Docs/Web: https://midori-docs.vercel.app/
+- Docs/Web: https://docs-midori.vercel.app
 
 
 ## Requirements
