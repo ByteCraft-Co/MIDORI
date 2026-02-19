@@ -185,7 +185,7 @@ def _check_function(
             if not isinstance(expr.callee, ast.IdentifierExpr):
                 raise MidoriError(
                     span=expr.span,
-                    message="only direct function calls are supported in v0.2.0",
+                    message="only direct function calls are supported",
                 )
             name = expr.callee.name
             if name == "print":
@@ -244,7 +244,7 @@ def _check_function(
             if not sig:
                 raise MidoriError(span=expr.span, message=f"unknown function '{name}'")
             if sig.generic_params:
-                # v0.2.0 monomorphization MVP: infer concrete call-site types and use return-by-substitution.
+                # Monomorphization MVP: infer concrete call-site types and substitute return type.
                 if len(expr.args) != len(sig.params):
                     raise MidoriError(
                         span=expr.span,

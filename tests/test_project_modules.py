@@ -55,7 +55,7 @@ def test_lockfile_is_deterministic(tmp_path: Path) -> None:
         """
 [package]
 name = "demo"
-version = "0.3.0"
+version = "0.1.0"
 
 [build]
 entry = "main.mdr"
