@@ -1,7 +1,7 @@
 {
   "name": "midori-language",
   "displayName": "MIDORI Language Support (Experimental)",
-  "description": "Experimental language support for MIDORI (.mdr): syntax highlighting, snippets, and file icons.",
+  "description": "Experimental MIDORI (.mdr) support with diagnostics, IntelliSense, snippets, and file icons.",
   "version": "0.0.3",
   "publisher": "bytecraftbt",
   "preview": true,
