@@ -11,7 +11,12 @@ Distribution: local/dev packaging today (`vsce package`), not published to Marke
 - Syntax highlighting (TextMate grammar)
 - Language configuration (comments, brackets, auto-closing pairs)
 - Snippets (`main`, `fn`, `if`)
-- Diagnostics-only language server with live `midori check` integration
+- Language server with:
+  - live diagnostics (`midori check`)
+  - completion (keywords, builtins, symbols, imports)
+  - hover info
+  - signature help
+  - go-to-definition
 - Problems-tab diagnostics with MIDORI error codes (`MDxxxx`)
 - Built-in `$midori` problem matcher for task output parsing
 - MIDORI file icon for `.mdr` (`assets/midori-logo.png`)
@@ -19,13 +24,14 @@ Distribution: local/dev packaging today (`vsce package`), not published to Marke
 
 ## What The Language Server Does
 
-The extension server runs the configured MIDORI command against a temporary file:
+For diagnostics, the extension server runs the configured MIDORI command against a temporary file:
 
 ```text
 <midori.lsp.command> <midori.lsp.args...> check <temp-file>
 ```
 
 Compiler diagnostics are parsed and reported as editor squiggles and Problems entries.
+For IntelliSense, the server builds a lightweight symbol index from open/imported `.mdr` files.
 
 ## Requirements
 
@@ -62,7 +68,8 @@ You can use the contributed `$midori` problem matcher in `tasks.json`:
 
 ## Current Limits
 
-- Diagnostics only (no completion, hover, go-to-definition, rename, or code actions)
+- IntelliSense is heuristic and currently focuses on practical local/imported symbol resolution
+- No rename or code actions yet
 - Diagnostic fidelity depends on current compiler output format
 - No formatter integration from the extension itself yet
 

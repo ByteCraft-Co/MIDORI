@@ -1,6 +1,6 @@
 #define MyAppId "midori.language.compiler"
 #define MyAppName "MIDORI"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.1.0"
 #define MyAppPublisher "Midori Contributors"
 #define MyAppURL "https://github.com/ByteCraft-Co/MIDORI"
 #define MyAppUpdatesURL "https://github.com/ByteCraft-Co/MIDORI/releases"

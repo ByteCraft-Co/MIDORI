@@ -121,7 +121,7 @@ class _Builder:
             if not isinstance(expr.callee, ast.IdentifierExpr):
                 raise MidoriError(
                     span=expr.span,
-                    message="only direct function calls are supported in v0.2.0",
+                    message="only direct function calls are supported",
                 )
             callee = expr.callee.name
 

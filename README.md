@@ -6,6 +6,7 @@ MIDORI is an experimental, safe-by-default language with an LLVM-backed compiler
 
 - Docs/Web: https://midori-docs.vercel.app/
 
+
 ## Requirements
 
 - Python 3.11+
