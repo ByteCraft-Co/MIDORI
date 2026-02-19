@@ -30,22 +30,33 @@ function Resolve-Iscc {
   throw "ISCC.exe not found. Install Inno Setup 6 or set ISCC_PATH."
 }
 
-function Update-InstallerIcon {
+function Assert-InstallerAssets {
   param(
-    [string]$PngPath,
-    [string]$IcoPath
+    [string]$PngPath
   )
 
   if (!(Test-Path $PngPath -PathType Leaf)) {
     throw "Logo PNG not found: $PngPath"
   }
 
+  Write-Host "Installer logo verified: $PngPath"
+}
+
+function New-TemporaryInstallerIcon {
+  param(
+    [string]$PngPath
+  )
+
   Add-Type -AssemblyName System.Drawing
+
+  $tempName = "midori-installer-$([guid]::NewGuid().ToString('N')).ico"
+  $tempIconPath = Join-Path ([System.IO.Path]::GetTempPath()) $tempName
+
   $bitmap = [System.Drawing.Bitmap]::FromFile($PngPath)
   try {
     $icon = [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
     try {
-      $stream = [System.IO.File]::Open($IcoPath, [System.IO.FileMode]::Create)
+      $stream = [System.IO.File]::Open($tempIconPath, [System.IO.FileMode]::Create)
       try {
         $icon.Save($stream)
       } finally {
@@ -58,7 +69,7 @@ function Update-InstallerIcon {
     $bitmap.Dispose()
   }
 
-  Write-Host "Updated installer icon: $IcoPath"
+  return $tempIconPath
 }
 
 function Build-VSCodeExtensionBundle {
@@ -106,8 +117,8 @@ if (!(Test-Path $issFull)) {
 }
 
 $logoPng = Join-Path $scriptDir "..\..\vscode-extension\assets\midori-logo.png"
-$logoIco = Join-Path $scriptDir "midori-logo.ico"
-Update-InstallerIcon -PngPath $logoPng -IcoPath $logoIco
+Assert-InstallerAssets -PngPath $logoPng
+$tempSetupIcon = New-TemporaryInstallerIcon -PngPath $logoPng
 
 $repoRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 $vsixVersion = Build-VSCodeExtensionBundle -RepoRoot $repoRoot
@@ -116,9 +127,13 @@ $iscc = Resolve-Iscc
 Write-Host "Using ISCC: $iscc"
 Write-Host "Building MIDORI installer version $Version"
 
-& $iscc "/DMyAppVersion=$Version" "/DMyVsixVersion=$vsixVersion" $issFull
-if ($LASTEXITCODE -ne 0) {
-  throw "ISCC failed with exit code $LASTEXITCODE"
+try {
+  & $iscc "/DMyAppVersion=$Version" "/DMyVsixVersion=$vsixVersion" "/DMySetupIconFile=$tempSetupIcon" $issFull
+  if ($LASTEXITCODE -ne 0) {
+    throw "ISCC failed with exit code $LASTEXITCODE"
+  }
+} finally {
+  Remove-Item $tempSetupIcon -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host "Installer build completed."

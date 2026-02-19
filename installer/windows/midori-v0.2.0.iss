@@ -7,6 +7,9 @@
 #ifndef MyVsixVersion
   #define MyVsixVersion "0.0.3"
 #endif
+#ifndef MySetupIconFile
+  #define MySetupIconFile "midori-logo.ico"
+#endif
 
 [Setup]
 AppId={#MyAppId}
@@ -19,7 +22,7 @@ AppUpdatesURL={#MyAppUpdatesURL}
 VersionInfoVersion={#MyAppVersion}
 VersionInfoProductName={#MyAppName}
 VersionInfoDescription={#MyAppName} Installer
-SetupIconFile=midori-logo.ico
+SetupIconFile={#MySetupIconFile}
 DefaultDirName={autopf}\MIDORI-{#MyAppVersion}
 DefaultGroupName=MIDORI-{#MyAppVersion}
 LicenseFile=..\..\LICENSE
