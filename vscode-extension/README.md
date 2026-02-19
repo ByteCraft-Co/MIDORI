@@ -78,8 +78,10 @@ You can use the contributed `$midori` problem matcher in `tasks.json`:
 ```bash
 npm install
 npm run lint
-npx @vscode/vsce package
+npx @vscode/vsce package -o dist/midori-language-<version>.vsix
 ```
+
+Installer scripts expect the extension bundle in `vscode-extension/dist/`.
 
 Run in VS Code:
 

@@ -4,6 +4,9 @@
 #define MyAppPublisher "Midori Contributors"
 #define MyAppURL "https://github.com/ByteCraft-Co/MIDORI"
 #define MyAppUpdatesURL "https://github.com/ByteCraft-Co/MIDORI/releases"
+#ifndef MyVsixVersion
+  #define MyVsixVersion "0.0.3"
+#endif
 
 [Setup]
 AppId={#MyAppId}
@@ -17,11 +20,11 @@ VersionInfoVersion={#MyAppVersion}
 VersionInfoProductName={#MyAppName}
 VersionInfoDescription={#MyAppName} Installer
 SetupIconFile=midori-logo.ico
-DefaultDirName={autopf}\\MIDORI 0.2.0
-DefaultGroupName=MIDORI 0.2.0
+DefaultDirName={autopf}\MIDORI-{#MyAppVersion}
+DefaultGroupName=MIDORI-{#MyAppVersion}
 LicenseFile=..\..\LICENSE
 AllowNoIcons=yes
-OutputDir=output\\v0.2.0
+OutputDir=output\v0.2.0
 OutputBaseFilename=midori-setup-v0.2.0
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -79,7 +82,18 @@ Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion; Components: cor
 Source: "midori-logo.ico"; DestDir: "{app}\assets"; Flags: ignoreversion; Components: core
 Source: "..\..\vscode-extension\assets\midori-logo.png"; DestDir: "{app}\assets"; Flags: ignoreversion; Components: core
 Source: "..\..\examples\*"; DestDir: "{app}\examples"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: examples
-Source: "..\..\vscode-extension\*"; DestDir: "{app}\vscode-extension"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\package.json"; DestDir: "{app}\vscode-extension"; Flags: ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\package-lock.json"; DestDir: "{app}\vscode-extension"; Flags: ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\README.md"; DestDir: "{app}\vscode-extension"; Flags: ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\LICENSE"; DestDir: "{app}\vscode-extension"; Flags: ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\language-configuration.json"; DestDir: "{app}\vscode-extension"; Flags: ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\.vscodeignore"; DestDir: "{app}\vscode-extension"; Flags: ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\assets\*"; DestDir: "{app}\vscode-extension\assets"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\icons\*"; DestDir: "{app}\vscode-extension\icons"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\snippets\*"; DestDir: "{app}\vscode-extension\snippets"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\src\*"; DestDir: "{app}\vscode-extension\src"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\syntaxes\*"; DestDir: "{app}\vscode-extension\syntaxes"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: vscode
+Source: "..\..\vscode-extension\dist\midori-language-{#MyVsixVersion}.vsix"; DestDir: "{app}\vscode-extension\dist"; Flags: ignoreversion; Components: vscode
 Source: "..\..\tests\*"; DestDir: "{app}\tests"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: devtools
 
 [Icons]
@@ -117,7 +131,7 @@ Type: filesandordirs; Name: "{app}"
 
 [Code]
 const
-  MidoriRegPath = 'Software\\MIDORI\\v0.2.0';
+  MidoriRegPath = 'Software\MIDORI\v0.2.0';
   MidoriUninstallRegPath = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1';
 
 type

@@ -61,6 +61,44 @@ function Update-InstallerIcon {
   Write-Host "Updated installer icon: $IcoPath"
 }
 
+function Build-VSCodeExtensionBundle {
+  param(
+    [string]$RepoRoot
+  )
+
+  $extDir = Join-Path $RepoRoot "vscode-extension"
+  $pkgPath = Join-Path $extDir "package.json"
+  if (!(Test-Path $pkgPath -PathType Leaf)) {
+    throw "VS Code extension package.json not found: $pkgPath"
+  }
+
+  $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+  $extVersion = [string]$pkg.version
+  if ([string]::IsNullOrWhiteSpace($extVersion)) {
+    throw "Unable to resolve VS Code extension version from: $pkgPath"
+  }
+
+  $distDir = Join-Path $extDir "dist"
+  New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+
+  $vsixName = "midori-language-$extVersion.vsix"
+  $vsixOut = Join-Path $distDir $vsixName
+
+  Write-Host "Packaging VS Code extension: $vsixName"
+  Push-Location $extDir
+  try {
+    $null = & npx @vscode/vsce package -o $vsixOut
+    if ($LASTEXITCODE -ne 0) {
+      throw "vsce package failed with exit code $LASTEXITCODE"
+    }
+  } finally {
+    Pop-Location
+  }
+  Write-Host "VS Code extension bundle ready: $vsixOut"
+
+  return $extVersion
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $issFull = Join-Path $scriptDir $IssPath
 if (!(Test-Path $issFull)) {
@@ -71,11 +109,14 @@ $logoPng = Join-Path $scriptDir "..\..\vscode-extension\assets\midori-logo.png"
 $logoIco = Join-Path $scriptDir "midori-logo.ico"
 Update-InstallerIcon -PngPath $logoPng -IcoPath $logoIco
 
+$repoRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
+$vsixVersion = Build-VSCodeExtensionBundle -RepoRoot $repoRoot
+
 $iscc = Resolve-Iscc
 Write-Host "Using ISCC: $iscc"
 Write-Host "Building MIDORI installer version $Version"
 
-& $iscc "/DMyAppVersion=$Version" $issFull
+& $iscc "/DMyAppVersion=$Version" "/DMyVsixVersion=$vsixVersion" $issFull
 if ($LASTEXITCODE -ne 0) {
   throw "ISCC failed with exit code $LASTEXITCODE"
 }

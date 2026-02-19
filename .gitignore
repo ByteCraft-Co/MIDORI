@@ -8,6 +8,8 @@ __pycache__/
 .venv/
 build/
 dist/
+!vscode-extension/dist/
+!vscode-extension/dist/.gitkeep
 *.exe
 *.ll
 *.s
