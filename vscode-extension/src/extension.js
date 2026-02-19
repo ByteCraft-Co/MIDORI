@@ -12,6 +12,13 @@ function readInitializationOptions() {
     args: config.get("lsp.args", []),
     runOnType: config.get("diagnostics.runOnType", true),
     debounceMs: config.get("diagnostics.debounceMs", 250),
+    diagnosticsTimeoutMs: config.get("diagnostics.timeoutMs", 15000),
+    diagnosticsMaxOutputBytes: config.get("diagnostics.maxOutputBytes", 262144),
+    diagnosticsMaxCount: config.get("diagnostics.maxCount", 250),
+    maxDocumentBytes: config.get("diagnostics.maxDocumentBytes", 2097152),
+    maxWorkspaceFiles: config.get("intellisense.maxWorkspaceFiles", 1500),
+    maxExternalIndexEntries: config.get("intellisense.maxExternalIndexEntries", 750),
+    allowExternalImports: config.get("intellisense.allowExternalImports", false),
     workspaceRoot: folder || process.cwd(),
   };
 }

@@ -42,8 +42,9 @@ def test_terminal_executes_single_command_and_exits(
     captured: dict[str, str] = {}
 
     class FakeTerminal:
-        def __init__(self, *, show_banner: bool = True) -> None:
+        def __init__(self, *, show_banner: bool = True, allow_shell: bool = False) -> None:
             assert show_banner is False
+            assert allow_shell is False
 
         def execute_line(self, line: str) -> tuple[bool, int]:
             captured["line"] = line
@@ -140,3 +141,33 @@ def test_terminal_declaring_main_runs_session_program(
     assert compiled_sources
     assert "fn main() -> Int {" in compiled_sources[-1]
     assert "print(1)" in compiled_sources[-1]
+
+
+def test_shell_command_disabled_by_default(capsys: pytest.CaptureFixture[str]) -> None:
+    app = terminal.MidoriTerminal(show_banner=False)
+    should_exit, status = app.execute_line(":shell echo hi")
+    assert not should_exit
+    assert status == 2
+    assert "disabled" in capsys.readouterr().out
+
+
+def test_shell_command_enabled_with_allow_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ran: dict[str, object] = {}
+
+    def fake_run(command: str, *, shell: bool, check: bool):
+        ran["command"] = command
+        ran["shell"] = shell
+        ran["check"] = check
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("midori_cli.terminal.subprocess.run", fake_run)
+
+    app = terminal.MidoriTerminal(show_banner=False, allow_shell=True)
+    should_exit, status = app.execute_line(":shell echo hi")
+    assert not should_exit
+    assert status == 0
+    assert ran["command"] == "echo hi"
+    assert ran["shell"] is True
+    assert ran["check"] is False

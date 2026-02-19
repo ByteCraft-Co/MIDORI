@@ -10,6 +10,7 @@ const {
   InsertTextFormat,
   MarkupKind,
   ProposedFeatures,
+  SymbolKind,
   TextDocuments,
   TextDocumentSyncKind,
 } = require("vscode-languageserver/node");
@@ -24,6 +25,13 @@ let settings = {
   runOnType: true,
   debounceMs: 250,
   workspaceRoot: process.cwd(),
+  diagnosticsTimeoutMs: 15000,
+  diagnosticsMaxOutputBytes: 256 * 1024,
+  diagnosticsMaxCount: 250,
+  maxDocumentBytes: 2 * 1024 * 1024,
+  maxWorkspaceFiles: 1500,
+  maxExternalIndexEntries: 750,
+  allowExternalImports: false,
 };
 
 /** @type {Map<string, NodeJS.Timeout>} */
@@ -34,6 +42,35 @@ const versions = new Map();
 const symbolCache = new Map();
 /** @type {Map<string, {mtimeMs: number, index: SymbolIndex}>} */
 const externalIndexCache = new Map();
+/** @type {Map<string, import("node:child_process").ChildProcess>} */
+const runningChecks = new Map();
+
+const WORKSPACE_FILES_CACHE_TTL_MS = 4000;
+const MAX_WORKSPACE_SYMBOL_RESULTS = 250;
+const MAX_REFERENCE_RESULTS = 750;
+const IGNORED_WORKSPACE_DIRS = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".idea",
+  ".vscode",
+  "__pycache__",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".mypy_cache",
+  ".venv",
+  "venv",
+  "node_modules",
+  "dist",
+  "build",
+  "output",
+]);
+
+let workspaceFileCache = {
+  root: "",
+  expiresAt: 0,
+  files: [],
+};
 
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const KEYWORDS = [
@@ -136,11 +173,13 @@ const BUILTIN_FUNCTION_MAP = new Map(BUILTIN_FUNCTIONS.map((item) => [item.name,
 connection.onInitialize((params) => {
   const init = params.initializationOptions || {};
   settings = normalizeSettings(init);
+  trimExternalIndexCache();
+  invalidateWorkspaceFileCache();
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       completionProvider: {
-        triggerCharacters: [":", "("],
+        triggerCharacters: [":", "(", '"', "/"],
       },
       hoverProvider: true,
       signatureHelpProvider: {
@@ -148,12 +187,19 @@ connection.onInitialize((params) => {
         retriggerCharacters: [","],
       },
       definitionProvider: true,
+      referencesProvider: true,
+      renameProvider: {
+        prepareProvider: true,
+      },
+      documentSymbolProvider: true,
+      workspaceSymbolProvider: true,
     },
   };
 });
 
 documents.onDidOpen((event) => {
   symbolCache.delete(event.document.uri);
+  invalidateWorkspaceFileCache();
   scheduleValidation(event.document, true);
 });
 
@@ -167,12 +213,14 @@ documents.onDidChangeContent((event) => {
 
 documents.onDidSave((event) => {
   symbolCache.delete(event.document.uri);
+  invalidateWorkspaceFileCache();
   scheduleValidation(event.document, true);
 });
 
 documents.onDidClose((event) => {
   clearTimer(event.document.uri);
   symbolCache.delete(event.document.uri);
+  cancelRunningCheck(event.document.uri);
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
 
@@ -183,6 +231,10 @@ connection.onCompletion(async (params) => {
   }
   const source = document.getText();
   const offset = document.offsetAt(params.position);
+  const importContext = getImportCompletionContext(document, params.position);
+  if (importContext) {
+    return provideImportPathCompletions(document, importContext);
+  }
   if (isInsideCommentOrString(source, offset)) {
     return [];
   }
@@ -319,6 +371,109 @@ connection.onDefinition(async (params) => {
   return locations.length === 1 ? locations[0] : locations;
 });
 
+connection.onReferences(async (params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return [];
+  }
+  const token = getIdentifierToken(document, params.position);
+  if (!token) {
+    return [];
+  }
+  if (isInsideCommentOrString(document.getText(), token.startOffset)) {
+    return [];
+  }
+
+  const index = getOrCreateSymbolIndex(document);
+  const target = await resolveRenameTarget(document, index, token.text, token.startOffset);
+  if (!target) {
+    return [];
+  }
+  return findReferenceLocations(target, token.text, {
+    includeDeclaration: params.context.includeDeclaration,
+  });
+});
+
+connection.onPrepareRename(async (params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return null;
+  }
+  const token = getIdentifierToken(document, params.position);
+  if (!token) {
+    return null;
+  }
+  if (isInsideCommentOrString(document.getText(), token.startOffset)) {
+    return null;
+  }
+  if (KEYWORDS.includes(token.text) || BUILTIN_FUNCTION_MAP.has(token.text)) {
+    return null;
+  }
+
+  const index = getOrCreateSymbolIndex(document);
+  const target = await resolveRenameTarget(document, index, token.text, token.startOffset);
+  if (!target) {
+    return null;
+  }
+  return {
+    range: token.range,
+    placeholder: token.text,
+  };
+});
+
+connection.onRenameRequest(async (params) => {
+  const newName = (params.newName || "").trim();
+  if (!IDENT_RE.test(newName) || KEYWORDS.includes(newName)) {
+    return {
+      changes: {},
+    };
+  }
+
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return {
+      changes: {},
+    };
+  }
+  const token = getIdentifierToken(document, params.position);
+  if (!token) {
+    return {
+      changes: {},
+    };
+  }
+  if (isInsideCommentOrString(document.getText(), token.startOffset)) {
+    return {
+      changes: {},
+    };
+  }
+
+  const index = getOrCreateSymbolIndex(document);
+  const target = await resolveRenameTarget(document, index, token.text, token.startOffset);
+  if (!target) {
+    return {
+      changes: {},
+    };
+  }
+
+  const references = await findReferenceLocations(target, token.text, {
+    includeDeclaration: true,
+  });
+  return buildWorkspaceEditForRename(references, newName);
+});
+
+connection.onDocumentSymbol((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return [];
+  }
+  const index = getOrCreateSymbolIndex(document);
+  return buildDocumentSymbols(document, index);
+});
+
+connection.onWorkspaceSymbol(async (params) => {
+  return queryWorkspaceSymbols(params.query || "");
+});
+
 documents.listen(connection);
 connection.listen();
 
@@ -328,16 +483,50 @@ function normalizeSettings(input) {
   const runOnType = typeof input.runOnType === "boolean" ? input.runOnType : true;
   const debounceMsRaw = typeof input.debounceMs === "number" ? input.debounceMs : 250;
   const debounceMs = Math.max(50, Math.floor(debounceMsRaw));
-  const workspaceRoot =
+  const diagnosticsTimeoutMsRaw =
+    typeof input.diagnosticsTimeoutMs === "number" ? input.diagnosticsTimeoutMs : 15000;
+  const diagnosticsTimeoutMs = clampNumber(diagnosticsTimeoutMsRaw, 2000, 120000, 15000);
+  const diagnosticsMaxOutputBytesRaw =
+    typeof input.diagnosticsMaxOutputBytes === "number"
+      ? input.diagnosticsMaxOutputBytes
+      : 256 * 1024;
+  const diagnosticsMaxOutputBytes = clampNumber(
+    diagnosticsMaxOutputBytesRaw,
+    64 * 1024,
+    2 * 1024 * 1024,
+    256 * 1024,
+  );
+  const diagnosticsMaxCountRaw =
+    typeof input.diagnosticsMaxCount === "number" ? input.diagnosticsMaxCount : 250;
+  const diagnosticsMaxCount = clampNumber(diagnosticsMaxCountRaw, 1, 1000, 250);
+  const maxDocumentBytesRaw =
+    typeof input.maxDocumentBytes === "number" ? input.maxDocumentBytes : 2 * 1024 * 1024;
+  const maxDocumentBytes = clampNumber(maxDocumentBytesRaw, 64 * 1024, 5 * 1024 * 1024, 2 * 1024 * 1024);
+  const maxWorkspaceFilesRaw =
+    typeof input.maxWorkspaceFiles === "number" ? input.maxWorkspaceFiles : 1500;
+  const maxWorkspaceFiles = clampNumber(maxWorkspaceFilesRaw, 100, 15000, 1500);
+  const maxExternalIndexEntriesRaw =
+    typeof input.maxExternalIndexEntries === "number" ? input.maxExternalIndexEntries : 750;
+  const maxExternalIndexEntries = clampNumber(maxExternalIndexEntriesRaw, 100, 5000, 750);
+  const allowExternalImports = Boolean(input.allowExternalImports);
+  const workspaceRootRaw =
     typeof input.workspaceRoot === "string" && input.workspaceRoot.trim().length > 0
       ? input.workspaceRoot
       : process.cwd();
+  const workspaceRoot = path.resolve(workspaceRootRaw);
   return {
     command: command || "midori",
     args,
     runOnType,
     debounceMs,
     workspaceRoot,
+    diagnosticsTimeoutMs,
+    diagnosticsMaxOutputBytes,
+    diagnosticsMaxCount,
+    maxDocumentBytes,
+    maxWorkspaceFiles,
+    maxExternalIndexEntries,
+    allowExternalImports,
   };
 }
 
@@ -362,9 +551,10 @@ async function validateDocument(document) {
   const token = (versions.get(document.uri) || 0) + 1;
   versions.set(document.uri, token);
   clearTimer(document.uri);
+  cancelRunningCheck(document.uri);
 
   try {
-    const diagnostics = await runCheck(document);
+    const diagnostics = await runCheck(document, token);
     const current = documents.get(document.uri);
     const isStale = !current || versions.get(document.uri) !== token || current.version !== document.version;
     if (!isStale) {
@@ -394,36 +584,100 @@ async function validateDocument(document) {
   }
 }
 
-async function runCheck(document) {
+async function runCheck(document, token) {
+  const sizeBytes = Buffer.byteLength(document.getText(), "utf8");
+  if (sizeBytes > settings.maxDocumentBytes) {
+    return [
+      {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+        severity: DiagnosticSeverity.Warning,
+        source: "midori-lsp",
+        code: "MD9001",
+        message:
+          `File too large for live diagnostics (${sizeBytes} bytes > ${settings.maxDocumentBytes}). `
+          + "Use 'midori check <file>' from terminal for full validation.",
+      },
+    ];
+  }
+
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "midori-lsp-"));
   const tempFile = path.join(tempDir, "document.mdr");
   await fs.writeFile(tempFile, document.getText(), "utf8");
 
   try {
-    const output = await execMidoriCheck(tempFile);
-    return parseDiagnostics(output);
+    const output = await execMidoriCheck(tempFile, document.uri, token);
+    return parseDiagnostics(output).slice(0, settings.diagnosticsMaxCount);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 }
 
-function execMidoriCheck(tempFile) {
+function execMidoriCheck(tempFile, uri, token) {
   const args = [...settings.args, "check", tempFile];
   return new Promise((resolve, reject) => {
     const proc = spawn(settings.command, args, {
       cwd: settings.workspaceRoot,
       windowsHide: true,
-      shell: process.platform === "win32",
+      shell: false,
     });
+    runningChecks.set(uri, proc);
     let stdout = "";
     let stderr = "";
+    let totalBytes = 0;
+    let truncated = false;
+    let timedOut = false;
+    const onChunk = (chunk, sink) => {
+      if (versions.get(uri) !== token) {
+        return;
+      }
+      const value = chunk.toString();
+      const chunkSize = Buffer.byteLength(value, "utf8");
+      const remaining = settings.diagnosticsMaxOutputBytes - totalBytes;
+      if (remaining <= 0) {
+        truncated = true;
+        return;
+      }
+      if (chunkSize <= remaining) {
+        if (sink === "stdout") {
+          stdout += value;
+        } else {
+          stderr += value;
+        }
+        totalBytes += chunkSize;
+        return;
+      }
+      const kept = value.slice(0, remaining);
+      if (sink === "stdout") {
+        stdout += kept;
+      } else {
+        stderr += kept;
+      }
+      totalBytes += Buffer.byteLength(kept, "utf8");
+      truncated = true;
+    };
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill();
+      } catch {
+        // Ignore process kill failures.
+      }
+    }, settings.diagnosticsTimeoutMs);
+
     proc.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      onChunk(chunk, "stdout");
     });
     proc.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      onChunk(chunk, "stderr");
     });
     proc.on("error", (err) => {
+      clearTimeout(timeout);
+      if (runningChecks.get(uri) === proc) {
+        runningChecks.delete(uri);
+      }
       reject(
         new Error(
           `Failed to run MIDORI diagnostics command '${settings.command}'. ${err.message}. Configure 'midori.lsp.command' and 'midori.lsp.args'.`,
@@ -431,7 +685,22 @@ function execMidoriCheck(tempFile) {
       );
     });
     proc.on("close", () => {
-      resolve(`${stdout}\n${stderr}`);
+      clearTimeout(timeout);
+      if (runningChecks.get(uri) === proc) {
+        runningChecks.delete(uri);
+      }
+      if (timedOut) {
+        reject(
+          new Error(
+            `MIDORI diagnostics timed out after ${settings.diagnosticsTimeoutMs} ms. Increase 'midori.diagnostics.timeoutMs' or run 'midori check' manually.`,
+          ),
+        );
+        return;
+      }
+      const suffix = truncated
+        ? "\n[midori-lsp] Diagnostic output truncated to configured byte limit."
+        : "";
+      resolve(`${stdout}\n${stderr}${suffix}`);
     });
   });
 }
@@ -442,6 +711,9 @@ function parseDiagnostics(output) {
   let last = null;
 
   for (const line of lines) {
+    if (!line || line.length > 5000) {
+      continue;
+    }
     const match = line.match(
       /^(.+):(\d+):(\d+):\s(error|warning)(?:\[(MD\d{4})\])?:\s(.*)$/,
     );
@@ -462,6 +734,9 @@ function parseDiagnostics(output) {
       };
       diagnostics.push(diagnostic);
       last = diagnostic;
+      if (diagnostics.length >= settings.diagnosticsMaxCount) {
+        break;
+      }
       continue;
     }
 
@@ -1031,17 +1306,618 @@ function dedupeLocations(locations) {
 }
 
 /**
+ * @param {TextDocument} document
+ * @param {{line: number, character: number}} position
+ * @returns {{typedPath: string} | null}
+ */
+function getImportCompletionContext(document, position) {
+  const source = document.getText();
+  const lineStartOffset = document.offsetAt({ line: position.line, character: 0 });
+  const offset = document.offsetAt(position);
+  const linePrefix = source.slice(lineStartOffset, offset);
+  const match = linePrefix.match(/\bimport\s+"([^"]*)$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    typedPath: match[1].replace(/\\/g, "/"),
+  };
+}
+
+/**
+ * @param {TextDocument} document
+ * @param {{typedPath: string}} context
+ * @returns {Promise<import("vscode-languageserver").CompletionItem[]>}
+ */
+async function provideImportPathCompletions(document, context) {
+  const currentFilePath = uriToFilePath(document.uri);
+  if (!currentFilePath) {
+    return [];
+  }
+  const typedPath = context.typedPath;
+  const slash = typedPath.lastIndexOf("/");
+  const dirPrefix = slash >= 0 ? typedPath.slice(0, slash + 1) : "";
+  const namePrefix = slash >= 0 ? typedPath.slice(slash + 1) : typedPath;
+  const lookupDir = path.resolve(path.dirname(currentFilePath), dirPrefix || ".");
+
+  if (!settings.allowExternalImports && !isPathWithinRoot(lookupDir, settings.workspaceRoot)) {
+    return [];
+  }
+
+  let entries = [];
+  try {
+    entries = await fs.readdir(lookupDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  const items = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || !entry.name.startsWith(namePrefix)) {
+      continue;
+    }
+    if (entry.isDirectory()) {
+      const label = `${dirPrefix}${entry.name}/`;
+      if (seen.has(label)) {
+        continue;
+      }
+      seen.add(label);
+      items.push({
+        label,
+        kind: CompletionItemKind.Folder,
+        detail: "MIDORI module folder",
+        insertText: label,
+      });
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".mdr")) {
+      continue;
+    }
+    const base = entry.name.slice(0, -4);
+    const label = `${dirPrefix}${base}`;
+    if (seen.has(label)) {
+      continue;
+    }
+    seen.add(label);
+    items.push({
+      label,
+      kind: CompletionItemKind.File,
+      detail: "MIDORI module",
+      insertText: label,
+    });
+  }
+  return items;
+}
+
+/**
+ * @param {TextDocument} document
+ * @param {SymbolIndex} index
+ * @returns {import("vscode-languageserver").DocumentSymbol[]}
+ */
+function buildDocumentSymbols(document, index) {
+  /** @type {import("vscode-languageserver").DocumentSymbol[]} */
+  const symbols = [];
+
+  const functions = [...index.functions].sort((a, b) => a.offset - b.offset);
+  for (const fn of functions) {
+    const start = document.positionAt(fn.offset);
+    const end =
+      typeof fn.bodyEndOffset === "number"
+        ? document.positionAt(fn.bodyEndOffset + 1)
+        : fn.range.end;
+    const fnSymbol = {
+      name: fn.name,
+      detail: fn.signature || undefined,
+      kind: SymbolKind.Function,
+      range: { start, end },
+      selectionRange: fn.range,
+      children: [],
+    };
+    const params = index.params
+      .filter((item) => item.container === fn.name)
+      .sort((a, b) => a.offset - b.offset);
+    for (const param of params) {
+      fnSymbol.children.push({
+        name: param.name,
+        detail: param.type || undefined,
+        kind: SymbolKind.Variable,
+        range: param.range,
+        selectionRange: param.range,
+      });
+    }
+    const locals = index.locals
+      .filter((item) => item.container === fn.name)
+      .sort((a, b) => a.offset - b.offset);
+    for (const local of locals) {
+      fnSymbol.children.push({
+        name: local.name,
+        detail: local.type || undefined,
+        kind: SymbolKind.Variable,
+        range: local.range,
+        selectionRange: local.range,
+      });
+    }
+    symbols.push(fnSymbol);
+  }
+
+  const enums = [...index.enums].sort((a, b) => a.offset - b.offset);
+  for (const item of enums) {
+    const enumSymbol = {
+      name: item.name,
+      kind: SymbolKind.Enum,
+      range: item.range,
+      selectionRange: item.range,
+      children: [],
+    };
+    const variants = index.variants
+      .filter((variant) => variant.container === item.name)
+      .sort((a, b) => a.offset - b.offset);
+    for (const variant of variants) {
+      enumSymbol.children.push({
+        name: variant.name,
+        detail: variant.signature || undefined,
+        kind: SymbolKind.EnumMember,
+        range: variant.range,
+        selectionRange: variant.range,
+      });
+    }
+    symbols.push(enumSymbol);
+  }
+
+  const errors = [...index.errors].sort((a, b) => a.offset - b.offset);
+  for (const item of errors) {
+    symbols.push({
+      name: item.name,
+      kind: SymbolKind.Class,
+      range: item.range,
+      selectionRange: item.range,
+    });
+  }
+
+  return symbols.sort((a, b) => {
+    if (a.range.start.line !== b.range.start.line) {
+      return a.range.start.line - b.range.start.line;
+    }
+    return a.range.start.character - b.range.start.character;
+  });
+}
+
+/**
+ * @param {string} query
+ * @returns {Promise<import("vscode-languageserver").SymbolInformation[]>}
+ */
+async function queryWorkspaceSymbols(query) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const files = await getWorkspaceMidoriFiles();
+  /** @type {import("vscode-languageserver").SymbolInformation[]} */
+  const results = [];
+
+  for (const filePath of files) {
+    const uri = pathToFileURL(filePath).toString();
+    const context = await getDocumentContextByUri(uri);
+    if (!context) {
+      continue;
+    }
+    for (const symbol of context.index.topLevelSymbols) {
+      if (normalizedQuery && !symbol.name.toLowerCase().includes(normalizedQuery)) {
+        continue;
+      }
+      results.push({
+        name: symbol.name,
+        kind: toLspSymbolKind(symbol.kind),
+        location: symbolToLocation(symbol),
+        containerName: symbol.container || undefined,
+      });
+      if (results.length >= MAX_WORKSPACE_SYMBOL_RESULTS) {
+        return results;
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * @param {TextDocument} document
+ * @param {SymbolIndex} index
+ * @param {string} name
+ * @param {number} offset
+ * @returns {Promise<MidoriSymbol | null>}
+ */
+async function resolveRenameTarget(document, index, name, offset) {
+  const symbol = await resolveSymbolForHover(document, index, name, offset);
+  if (!symbol || !("kind" in symbol)) {
+    return null;
+  }
+  return symbol;
+}
+
+/**
+ * @param {MidoriSymbol} target
+ * @param {string} name
+ * @param {{includeDeclaration: boolean}} options
+ * @returns {Promise<Array<{uri: string, range: {start: {line: number, character: number}, end: {line: number, character: number}}}>>}
+ */
+async function findReferenceLocations(target, name, options) {
+  if (target.kind === "local" || target.kind === "param") {
+    const context = await getDocumentContextByUri(target.uri);
+    if (!context) {
+      return options.includeDeclaration ? [symbolToLocation(target)] : [];
+    }
+    const fn = context.index.functions.find((item) => item.name === target.container);
+    const startOffset = fn ? fn.offset : 0;
+    const endOffset =
+      fn && typeof fn.bodyEndOffset === "number"
+        ? fn.bodyEndOffset + 1
+        : context.source.length;
+    const offsets = collectIdentifierOffsets(context.source, name, startOffset, endOffset);
+    const found = [];
+    for (const offset of offsets) {
+      if (isInsideCommentOrString(context.source, offset)) {
+        continue;
+      }
+      const resolved = findBestLocalSymbol(context.index, name, offset);
+      if (!resolved || !isSameSymbol(resolved, target)) {
+        continue;
+      }
+      found.push(offsetToLocation(context.document, offset, name.length));
+    }
+    if (options.includeDeclaration) {
+      found.push(symbolToLocation(target));
+    }
+    return dedupeLocations(found);
+  }
+
+  const targetDefinition = symbolToLocation(target);
+  const candidateUris = await getReferenceCandidateUris(target);
+  const out = [];
+  for (const uri of candidateUris) {
+    const context = await getDocumentContextByUri(uri);
+    if (!context) {
+      continue;
+    }
+    const offsets = collectIdentifierOffsets(context.source, name, 0, context.source.length);
+    for (const offset of offsets) {
+      if (isInsideCommentOrString(context.source, offset)) {
+        continue;
+      }
+      const defs = await resolveDefinitionLocations(
+        context.document,
+        context.index,
+        name,
+        offset,
+      );
+      if (!defs.some((location) => isSameLocation(location, targetDefinition))) {
+        continue;
+      }
+      const location = offsetToLocation(context.document, offset, name.length);
+      if (!options.includeDeclaration && isSameLocation(location, targetDefinition)) {
+        continue;
+      }
+      out.push(location);
+      if (out.length >= MAX_REFERENCE_RESULTS) {
+        return dedupeLocations(out);
+      }
+    }
+  }
+  if (options.includeDeclaration) {
+    out.push(targetDefinition);
+  }
+  return dedupeLocations(out);
+}
+
+/**
+ * @param {MidoriSymbol} target
+ * @returns {Promise<string[]>}
+ */
+async function getReferenceCandidateUris(target) {
+  const uris = new Set([target.uri]);
+  for (const document of documents.all()) {
+    if (document.languageId === "midori") {
+      uris.add(document.uri);
+    }
+  }
+
+  if (target.kind === "local" || target.kind === "param") {
+    return Array.from(uris);
+  }
+
+  const targetPath = uriToFilePath(target.uri);
+  if (!targetPath) {
+    return Array.from(uris);
+  }
+
+  const files = await getWorkspaceMidoriFiles();
+  for (const filePath of files) {
+    if (isSamePath(filePath, targetPath)) {
+      continue;
+    }
+    let importIndex;
+    try {
+      importIndex = await getExternalSymbolIndex(filePath);
+    } catch {
+      continue;
+    }
+    let importsTarget = false;
+    for (const item of importIndex.imports) {
+      const resolved = await resolveImportPath(item.path, filePath);
+      if (resolved && isSamePath(resolved, targetPath)) {
+        importsTarget = true;
+        break;
+      }
+    }
+    if (importsTarget) {
+      uris.add(pathToFileURL(filePath).toString());
+    }
+  }
+  return Array.from(uris);
+}
+
+/**
+ * @param {Array<{uri: string, range: {start: {line: number, character: number}, end: {line: number, character: number}}}>} references
+ * @param {string} newName
+ * @returns {{changes: Record<string, Array<{range: {start: {line: number, character: number}, end: {line: number, character: number}}, newText: string}>>}}
+ */
+function buildWorkspaceEditForRename(references, newName) {
+  /** @type {Record<string, Array<{range: {start: {line: number, character: number}, end: {line: number, character: number}}, newText: string}>>} */
+  const changes = {};
+  for (const location of references) {
+    if (!changes[location.uri]) {
+      changes[location.uri] = [];
+    }
+    changes[location.uri].push({
+      range: location.range,
+      newText: newName,
+    });
+  }
+  for (const uri of Object.keys(changes)) {
+    changes[uri].sort((a, b) => {
+      if (a.range.start.line !== b.range.start.line) {
+        return b.range.start.line - a.range.start.line;
+      }
+      return b.range.start.character - a.range.start.character;
+    });
+  }
+  return { changes };
+}
+
+/**
+ * @param {string} uri
+ * @returns {Promise<{document: TextDocument, source: string, index: SymbolIndex} | null>}
+ */
+async function getDocumentContextByUri(uri) {
+  const open = documents.get(uri);
+  if (open) {
+    return {
+      document: open,
+      source: open.getText(),
+      index: getOrCreateSymbolIndex(open),
+    };
+  }
+  const filePath = uriToFilePath(uri);
+  if (!filePath) {
+    return null;
+  }
+
+  let text = "";
+  let stats = null;
+  try {
+    [text, stats] = await Promise.all([
+      fs.readFile(filePath, "utf8"),
+      fs.stat(filePath),
+    ]);
+  } catch {
+    return null;
+  }
+  const document = TextDocument.create(uri, "midori", 0, text);
+  const cached = externalIndexCache.get(filePath);
+  let index;
+  if (cached && cached.mtimeMs === stats.mtimeMs) {
+    touchExternalIndexCache(filePath, cached);
+    index = cached.index;
+  } else {
+    index = buildSymbolIndex(document);
+    setExternalIndexCache(filePath, { mtimeMs: stats.mtimeMs, index });
+  }
+  return {
+    document,
+    source: text,
+    index,
+  };
+}
+
+/**
+ * @returns {Promise<string[]>}
+ */
+async function getWorkspaceMidoriFiles() {
+  if (!settings.workspaceRoot) {
+    return [];
+  }
+  const now = Date.now();
+  if (
+    workspaceFileCache.root === settings.workspaceRoot
+    && workspaceFileCache.expiresAt > now
+  ) {
+    return workspaceFileCache.files;
+  }
+  const files = await scanWorkspaceMidoriFiles(settings.workspaceRoot, settings.maxWorkspaceFiles);
+  workspaceFileCache = {
+    root: settings.workspaceRoot,
+    expiresAt: now + WORKSPACE_FILES_CACHE_TTL_MS,
+    files,
+  };
+  return files;
+}
+
+function invalidateWorkspaceFileCache() {
+  workspaceFileCache.expiresAt = 0;
+}
+
+/**
+ * @param {string} root
+ * @param {number} maxFiles
+ * @returns {Promise<string[]>}
+ */
+async function scanWorkspaceMidoriFiles(root, maxFiles) {
+  const normalizedRoot = path.resolve(root);
+  const files = [];
+  const queue = [normalizedRoot];
+  while (queue.length > 0 && files.length < maxFiles) {
+    const dir = queue.shift();
+    if (!dir) {
+      continue;
+    }
+    let entries = [];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (entry.name === "." || entry.name === "..") {
+        continue;
+      }
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!IGNORED_WORKSPACE_DIRS.has(entry.name)) {
+          queue.push(fullPath);
+        }
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      if (!entry.name.toLowerCase().endsWith(".mdr")) {
+        continue;
+      }
+      files.push(path.normalize(fullPath));
+      if (files.length >= maxFiles) {
+        break;
+      }
+    }
+  }
+  return files;
+}
+
+/**
+ * @param {string} source
+ * @param {string} identifier
+ * @param {number} startOffset
+ * @param {number} endOffset
+ * @returns {number[]}
+ */
+function collectIdentifierOffsets(source, identifier, startOffset, endOffset) {
+  const out = [];
+  const escaped = escapeRegExp(identifier);
+  const re = new RegExp(`\\b${escaped}\\b`, "g");
+  re.lastIndex = startOffset;
+  while (true) {
+    const match = re.exec(source);
+    if (!match || typeof match.index !== "number") {
+      break;
+    }
+    if (match.index >= endOffset) {
+      break;
+    }
+    out.push(match.index);
+  }
+  return out;
+}
+
+/**
+ * @param {string} value
+ * @returns {string}
+ */
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * @param {TextDocument} document
+ * @param {number} offset
+ * @param {number} length
+ * @returns {{uri: string, range: {start: {line: number, character: number}, end: {line: number, character: number}}}}
+ */
+function offsetToLocation(document, offset, length) {
+  return {
+    uri: document.uri,
+    range: {
+      start: document.positionAt(offset),
+      end: document.positionAt(offset + length),
+    },
+  };
+}
+
+/**
+ * @param {MidoriSymbol} a
+ * @param {MidoriSymbol} b
+ * @returns {boolean}
+ */
+function isSameSymbol(a, b) {
+  return (
+    a.uri === b.uri
+    && a.range.start.line === b.range.start.line
+    && a.range.start.character === b.range.start.character
+  );
+}
+
+/**
+ * @param {{uri: string, range: {start: {line: number, character: number}}}} a
+ * @param {{uri: string, range: {start: {line: number, character: number}}}} b
+ * @returns {boolean}
+ */
+function isSameLocation(a, b) {
+  return (
+    a.uri === b.uri
+    && a.range.start.line === b.range.start.line
+    && a.range.start.character === b.range.start.character
+  );
+}
+
+/**
+ * @param {string} filePath
+ * @param {{mtimeMs: number, index: SymbolIndex}} entry
+ */
+function touchExternalIndexCache(filePath, entry) {
+  externalIndexCache.delete(filePath);
+  externalIndexCache.set(filePath, entry);
+}
+
+/**
+ * @param {string} filePath
+ * @param {{mtimeMs: number, index: SymbolIndex}} entry
+ */
+function setExternalIndexCache(filePath, entry) {
+  externalIndexCache.set(filePath, entry);
+  trimExternalIndexCache();
+}
+
+function trimExternalIndexCache() {
+  while (externalIndexCache.size > settings.maxExternalIndexEntries) {
+    const oldest = externalIndexCache.keys().next().value;
+    if (!oldest) {
+      break;
+    }
+    externalIndexCache.delete(oldest);
+  }
+}
+
+/**
  * @param {SymbolIndex} index
  * @param {string} currentFilePath
  * @returns {Promise<MidoriSymbol[]>}
  */
 async function collectImportedTopLevelSymbols(index, currentFilePath) {
   const collected = [];
+  const seenPaths = new Set();
   for (const item of index.imports) {
     const importPath = await resolveImportPath(item.path, currentFilePath);
-    if (!importPath) {
+    if (!importPath || seenPaths.has(importPath)) {
       continue;
     }
+    seenPaths.add(importPath);
     try {
       const importIndex = await getExternalSymbolIndex(importPath);
       collected.push(...importIndex.topLevelSymbols);
@@ -1066,13 +1942,14 @@ async function getExternalSymbolIndex(filePath) {
   const stats = await fs.stat(filePath);
   const cached = externalIndexCache.get(filePath);
   if (cached && cached.mtimeMs === stats.mtimeMs) {
+    touchExternalIndexCache(filePath, cached);
     return cached.index;
   }
 
   const text = await fs.readFile(filePath, "utf8");
   const doc = TextDocument.create(fileUri, "midori", 0, text);
   const index = buildSymbolIndex(doc);
-  externalIndexCache.set(filePath, { mtimeMs: stats.mtimeMs, index });
+  setExternalIndexCache(filePath, { mtimeMs: stats.mtimeMs, index });
   return index;
 }
 
@@ -1093,7 +1970,17 @@ async function resolveImportPath(importSpec, currentFilePath) {
   for (const candidate of candidates) {
     try {
       await fs.access(candidate);
-      return path.normalize(candidate);
+      const normalized = path.normalize(candidate);
+      if (path.extname(normalized).toLowerCase() !== ".mdr") {
+        continue;
+      }
+      if (
+        !settings.allowExternalImports
+        && !isPathWithinRoot(normalized, settings.workspaceRoot)
+      ) {
+        continue;
+      }
+      return normalized;
     } catch {
       // Try next candidate.
     }
@@ -1603,6 +2490,77 @@ function formatCallableParams(params) {
  */
 function normalizeTypeName(text) {
   return (text || "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * @param {SymbolKindTag} kind
+ * @returns {number}
+ */
+function toLspSymbolKind(kind) {
+  if (kind === "function") {
+    return SymbolKind.Function;
+  }
+  if (kind === "enum") {
+    return SymbolKind.Enum;
+  }
+  if (kind === "variant") {
+    return SymbolKind.EnumMember;
+  }
+  if (kind === "error") {
+    return SymbolKind.Class;
+  }
+  return SymbolKind.Variable;
+}
+
+/**
+ * @param {string} uri
+ */
+function cancelRunningCheck(uri) {
+  const current = runningChecks.get(uri);
+  if (!current) {
+    return;
+  }
+  runningChecks.delete(uri);
+  try {
+    current.kill();
+  } catch {
+    // Ignore process kill failures.
+  }
+}
+
+/**
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
+function clampNumber(value, min, max, fallback) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+/**
+ * @param {string} candidate
+ * @param {string} root
+ * @returns {boolean}
+ */
+function isPathWithinRoot(candidate, root) {
+  const normalizedRoot = path.resolve(root);
+  const normalizedCandidate = path.resolve(candidate);
+  const relative = path.relative(normalizedRoot, normalizedCandidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function isSamePath(a, b) {
+  return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 }
 
 /**

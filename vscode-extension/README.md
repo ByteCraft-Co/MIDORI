@@ -13,10 +13,14 @@ Distribution: local/dev packaging today (`vsce package`), not published to Marke
 - Snippets (`main`, `fn`, `if`)
 - Language server with:
   - live diagnostics (`midori check`)
-  - completion (keywords, builtins, symbols, imports)
+  - completion (keywords, builtins, symbols, imports, import-paths)
   - hover info
   - signature help
   - go-to-definition
+  - find references
+  - rename symbol (scope-aware)
+  - document symbols (outline)
+  - workspace symbol search
 - Problems-tab diagnostics with MIDORI error codes (`MDxxxx`)
 - Built-in `$midori` problem matcher for task output parsing
 - MIDORI file icon for `.mdr` (`assets/midori-logo.png`)
@@ -31,7 +35,8 @@ For diagnostics, the extension server runs the configured MIDORI command against
 ```
 
 Compiler diagnostics are parsed and reported as editor squiggles and Problems entries.
-For IntelliSense, the server builds a lightweight symbol index from open/imported `.mdr` files.
+For IntelliSense, the server builds bounded symbol indexes from open/imported/workspace `.mdr` files.
+By default import resolution is sandboxed to the workspace root for safer indexing.
 
 ## Requirements
 
@@ -46,6 +51,13 @@ Default expected command is `midori`.
 - `midori.lsp.args`: default `[]`, module-mode example `["-m", "midori_cli.main"]`
 - `midori.diagnostics.runOnType`: default `true`
 - `midori.diagnostics.debounceMs`: default `250` (minimum `50`)
+- `midori.diagnostics.timeoutMs`: default `15000`
+- `midori.diagnostics.maxOutputBytes`: default `262144`
+- `midori.diagnostics.maxCount`: default `250`
+- `midori.diagnostics.maxDocumentBytes`: default `2097152`
+- `midori.intellisense.maxWorkspaceFiles`: default `1500`
+- `midori.intellisense.maxExternalIndexEntries`: default `750`
+- `midori.intellisense.allowExternalImports`: default `false`
 
 ## Task-Based Diagnostics
 
@@ -69,7 +81,7 @@ You can use the contributed `$midori` problem matcher in `tasks.json`:
 ## Current Limits
 
 - IntelliSense is heuristic and currently focuses on practical local/imported symbol resolution
-- No rename or code actions yet
+- Rename/references for heavily ambiguous symbols may be conservative to avoid unsafe edits
 - Diagnostic fidelity depends on current compiler output format
 - No formatter integration from the extension itself yet
 

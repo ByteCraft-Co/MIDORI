@@ -117,6 +117,47 @@
           "minimum": 50,
           "default": 250,
           "description": "Debounce delay for diagnostics when typing."
+        },
+        "midori.diagnostics.timeoutMs": {
+          "type": "number",
+          "minimum": 2000,
+          "default": 15000,
+          "description": "Maximum time the language server waits for a diagnostics process before canceling it."
+        },
+        "midori.diagnostics.maxOutputBytes": {
+          "type": "number",
+          "minimum": 65536,
+          "default": 262144,
+          "description": "Upper bound for captured diagnostics process output to keep the editor responsive."
+        },
+        "midori.diagnostics.maxCount": {
+          "type": "number",
+          "minimum": 1,
+          "default": 250,
+          "description": "Maximum number of diagnostics published per document."
+        },
+        "midori.diagnostics.maxDocumentBytes": {
+          "type": "number",
+          "minimum": 65536,
+          "default": 2097152,
+          "description": "Maximum source size for live diagnostics. Larger files are skipped for on-type checks."
+        },
+        "midori.intellisense.maxWorkspaceFiles": {
+          "type": "number",
+          "minimum": 100,
+          "default": 1500,
+          "description": "Maximum number of workspace .mdr files scanned for symbols/references."
+        },
+        "midori.intellisense.maxExternalIndexEntries": {
+          "type": "number",
+          "minimum": 100,
+          "default": 750,
+          "description": "Maximum number of cached symbol indexes for imported files."
+        },
+        "midori.intellisense.allowExternalImports": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow IntelliSense import resolution outside the workspace root."
         }
       }
     }

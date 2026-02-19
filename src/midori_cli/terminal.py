@@ -164,8 +164,9 @@ def _scaffold_project(target: Path) -> int:
 
 
 class MidoriTerminal:
-    def __init__(self, *, show_banner: bool = True) -> None:
+    def __init__(self, *, show_banner: bool = True, allow_shell: bool = False) -> None:
         self._show_banner = show_banner
+        self._allow_shell = allow_shell
         self._version = _resolve_version()
         self._session_declarations: list[str] = []
         self._pending_declaration: list[str] = []
@@ -273,9 +274,9 @@ class MidoriTerminal:
         print("  :cd <path>                 Change current directory")
         print("  :clear                     Clear terminal screen")
         print("  :reset                     Clear session declarations")
-        print("  :shell <command>           Run a shell command")
+        print("  :shell <command>           Run a shell command (disabled unless --allow-shell)")
         print("  :cancel                    Cancel current multiline declaration")
-        print("  !<command>                 Shortcut for :shell")
+        print("  !<command>                 Shortcut for :shell (requires --allow-shell)")
         print("  :quit                      Exit terminal")
         print("  import/error/fn/...        Top-level declarations support multiline input")
         print("  <expression>               Evaluate Midori expression")
@@ -515,6 +516,11 @@ class MidoriTerminal:
         return 0
 
     def _cmd_shell(self, command: str) -> int:
+        if not self._allow_shell:
+            print(
+                "shell commands are disabled. restart with --allow-shell to enable :shell/! commands"
+            )
+            return 2
         if not command:
             print("usage: :shell <command>")
             return 2
@@ -544,9 +550,14 @@ def main() -> None:
         default=None,
         help="execute a single command/expression and exit",
     )
+    parser.add_argument(
+        "--allow-shell",
+        action="store_true",
+        help="enable :shell and ! command passthrough (disabled by default for safety)",
+    )
     args = parser.parse_args()
 
-    terminal = MidoriTerminal(show_banner=not args.no_banner)
+    terminal = MidoriTerminal(show_banner=not args.no_banner, allow_shell=args.allow_shell)
     if args.command is not None:
         _should_exit, status = terminal.execute_line(args.command)
         raise SystemExit(status)
