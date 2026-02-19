@@ -4,8 +4,9 @@ This repository follows a lightweight release-flow model to keep production rele
 
 ## Long-Lived Branches
 
-- `main`: stable integration branch; release tags are cut from here.
-- `develop`: optional staging branch for grouped integration before landing on `main`.
+- `master`: default branch; release tags are cut from here.
+- `main`: mirror of `master` kept in sync for tooling and ecosystem compatibility.
+- `develop`: optional staging branch for grouped integration before landing on `master`.
 
 ## Short-Lived Branches
 
@@ -22,9 +23,10 @@ Short-lived branches should be rebased/merged frequently and deleted after merge
 
 When release validation passes:
 
-1. Merge release branch into `main`.
-2. Tag `vX.Y.Z` on `main`.
-3. Merge back into `develop` if used.
+1. Merge release branch into `master`.
+2. Fast-forward `main` from `master` to keep both branches aligned.
+3. Tag `vX.Y.Z` on `master` (same commit as `main`).
+4. Merge back into `develop` if used.
 
 ## Protection Recommendations
 

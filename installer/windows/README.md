@@ -8,6 +8,7 @@ This folder contains Inno Setup specs and build scripts for MIDORI Windows insta
 - `build-installer-v0.1.0.ps1`: explicit `0.1.0` installer build script.
 - `build-installer-v0.2.0.ps1`: explicit `0.2.0` installer build script.
 - `build-installer-v020.ps1`: compatibility shim that forwards to `build-installer-v0.2.0.ps1`.
+- Build scripts validate installer assets and do not rewrite tracked icon files during build.
 
 ## Setup Specs
 
