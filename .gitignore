@@ -10,6 +10,13 @@ build/
 dist/
 !vscode-extension/dist/
 !vscode-extension/dist/.gitkeep
+installer/windows/output/**
+!installer/windows/output/
+!installer/windows/output/.gitkeep
+!installer/windows/output/v0.1.0/
+!installer/windows/output/v0.1.0/.gitkeep
+!installer/windows/output/v0.2.0/
+!installer/windows/output/v0.2.0/.gitkeep
 *.exe
 *.ll
 *.s

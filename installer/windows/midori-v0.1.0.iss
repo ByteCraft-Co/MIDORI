@@ -1,6 +1,6 @@
-﻿#define MyAppId "midori.language.compiler.v020"
+#define MyAppId "midori.language.compiler"
 #define MyAppName "MIDORI"
-#define MyAppVersion "0.2.0"
+#define MyAppVersion "0.1.0"
 #define MyAppPublisher "Midori Contributors"
 #define MyAppURL "https://github.com/ByteCraft-Co/MIDORI"
 #define MyAppUpdatesURL "https://github.com/ByteCraft-Co/MIDORI/releases"
@@ -21,11 +21,11 @@ VersionInfoProductName={#MyAppName}
 VersionInfoDescription={#MyAppName} Installer
 SetupIconFile=midori-logo.ico
 DefaultDirName={autopf}\MIDORI-{#MyAppVersion}
-DefaultGroupName=MIDORI-{#MyAppVersion}
+DefaultGroupName=MIDORI
 LicenseFile=..\..\LICENSE
 AllowNoIcons=yes
-OutputDir=output\v0.2.0
-OutputBaseFilename=midori-setup-v0.2.0
+OutputDir=output\v0.1.0
+OutputBaseFilename=midori-setup-v0.1.0
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -43,7 +43,7 @@ ChangesEnvironment=yes
 CloseApplications=yes
 DisableDirPage=no
 SetupLogging=yes
-UninstallDisplayName=MIDORI 0.2.0
+UninstallDisplayName=MIDORI
 UninstallDisplayIcon={app}\assets\midori-logo.ico
 
 [Languages]
@@ -131,7 +131,7 @@ Type: filesandordirs; Name: "{app}"
 
 [Code]
 const
-  MidoriRegPath = 'Software\MIDORI\v0.2.0';
+  MidoriRegPath = 'Software\MIDORI';
   MidoriUninstallRegPath = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1';
 
 type
@@ -681,4 +681,3 @@ begin
     end;
   end;
 end;
-

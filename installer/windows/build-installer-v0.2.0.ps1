@@ -1,6 +1,6 @@
-param(
-  [string]$Version = "0.1.0",
-  [string]$IssPath = "midori-v0.1.0.iss"
+﻿param(
+  [string]$Version = "0.2.0",
+  [string]$IssPath = "midori-v0.2.0.iss"
 )
 
 $ErrorActionPreference = "Stop"
@@ -122,3 +122,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Installer build completed."
+
