@@ -147,6 +147,8 @@ midori test
 ```
 
 See `AGENTS.md` for contributor conventions and feature workflow.
+Branch/release guidance: `docs/BRANCHING.md`.
+Repository layout guide: `docs/PROJECT_STRUCTURE.md`.
 
 ## Legal
 
